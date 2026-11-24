@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>粒子圣诞树制作教程</title>
+  <style>
+    :root { color-scheme: light; color: #282c27; background: #f8f7f2;
+      font: 100%/1.65 "Geist", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 880px; margin: 0 auto; padding: 48px 32px 64px; }
+    h1, h2 { color: #172b23; text-wrap: balance; }
+    h1 { margin: 0 0 8px; font: 600 clamp(2rem, 5vw, 3rem)/1.18 "Baskervville", "Songti SC", SimSun, serif; }
+    h2 { font-size: 1.5rem; line-height: 1.4; margin: 40px 0 12px; }
+    p, ol, dl { margin: 8px 0 16px; }
+    .intro { margin: 0 0 24px; color: #46534a; }
+    .preview { display: block; width: 100%; height: auto; border-radius: 12px; }
+    .samples { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); margin: 0; }
+    .samples a { padding: 12px 4px; text-align: center; font-weight: 600; }
+    a { color: #255b48; text-underline-offset: .20em; }
+    a:hover { color: #0e3929; }
+    :focus-visible { outline: 2px solid #216b4f; outline-offset: 3px; }
+    ol { padding-inline-start: 24px; }
+    li { padding-inline-start: 4px; margin: 8px 0; }
+    code, kbd, pre { font-family: "IBM Plex Mono", Consolas, "Microsoft YaHei", monospace; }
+    code { overflow-wrap: anywhere; }
+    kbd { font-size: .9em; background: #ebece4; padding: 2px 4px; border-radius: 4px; white-space: nowrap; }
+    pre { margin: 12px 0 16px; padding: 16px 24px; overflow: auto; color: #e4efe4; background: #172b24;
+      border-radius: 8px; font-size: .9375rem; line-height: 1.7; }
+    pre code { overflow-wrap: normal; }
+    dt { font-weight: 600; margin-top: 12px; }
+    dd { margin: 0; }
+    .swatch { display: inline-block; width: .8em; height: .8em; margin-inline: .2em;
+      border-radius: 50%; border: 1px solid #0002; }
+    .shots { list-style: none; padding: 0; }
+    .shots li { display: grid; grid-template-columns: 6.5rem 1fr; gap: 12px; padding: 8px 0; margin: 0; }
+    .shots time { color: #3a6150; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .shots span { min-width: 0; }
+    .shots b { display: block; }
+    details { margin: 16px 0; }
+    summary { cursor: pointer; color: #255b48; padding-block: 8px; font-weight: 600; }
+    .sources { font-size: .875rem; }
+    @media (max-width: 560px) {
+      main { padding: 32px 16px 48px; } h2 { margin-top: 32px; }
+      .shots li { grid-template-columns: 4.8rem 1fr; gap: 8px; }
+      pre { padding: 12px; font-size: .875rem; }
+    }
+    @media print {
+      :root { background: #fff; } main { padding: 0; }
+      .preview { max-height: 17rem; width: auto; max-width: 100%; }
+      h2 { break-after: avoid; } pre, .shots li { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>粒子圣诞树制作教程</h1>
+  <p class="intro">用《冰晶回旋》练一遍，另外两款也能用同样的方法换颜色、改粒子、写祝福。</p>
+  <img class="preview" src="__PREVIEW_IMAGE__" width="1296" height="768"
+    alt="玫瑰色粒子围成一颗爱心，冰蓝树旁绽开六枝霜花，红球松树的树顶正洒下金雨。">
+  <nav class="samples" aria-label="打开圣诞树样本">
+    <a href="玫瑰星愿.html">玫瑰星愿 ↗</a><a href="冰晶回旋.html">冰晶回旋 ↗</a><a href="平安夜灯火.html">平安夜灯火 ↗</a>
+  </nav>
+
+  <h2>打开自己的副本</h2>
+  <ol>
+    <li>在 Windows 文件资源管理器里复制 <strong>冰晶回旋.html</strong>，把副本改名为 <strong>送给小满.html</strong>，保留末尾的 <code>.html</code>。</li>
+    <li>双击副本，用 Edge 或 Chrome 打开。先看蓝光在冰面上的倒影和随它亮起的冰裂纹，再跟着它绕过正在结晶的枝梢，来到极光下的树尖。约 4.5 秒后，在树旁的夜空点一下，看霜花从那里长出。横向拖动，观察树枝和树脚的星尘一起转过来。</li>
+    <li>回到文件夹，右键同一份副本，选「打开方式 → 记事本」。按 <kbd>Ctrl</kbd> + <kbd>F</kbd> 搜索 <strong>个性设置</strong>。</li>
+  </ol>
+
+  <h2>改这三个值</h2>
+  <p>把文件开头的设置改成下面这样。保留英文双引号和逗号，数字直接写。</p>
+  <pre><code>const SETTINGS = {
+  color: "#75E6CB",
+  particleCount: 2200,
+  greeting: "小满，圣诞快乐"
+};</code></pre>
+  <dl>
+    <dt><code>color</code> 控制主光颜色</dt>
+    <dd>薄荷青 <span class="swatch" style="background:#75e6cb"></span><code>#75E6CB</code>，玫瑰粉 <span class="swatch" style="background:#f28dba"></span><code>#F28DBA</code>，冰晶蓝 <span class="swatch" style="background:#9cdeff"></span><code>#9CDEFF</code>。在《平安夜灯火》里，这一项改变灯串的光色。</dd>
+    <dt><code>particleCount</code> 控制树身疏密</dt>
+    <dd>可以写 400 到 4800 的整数。《冰晶回旋》默认是 3750。试试 1200，再试 3750，比较光带之间透出的夜空和周围的雪晶数量。手机录屏掉帧时，可以先调到 1600。</dd>
+    <dt><code>greeting</code> 是树下的文字</dt>
+    <dd>双引号里可以写名字、一句话或 emoji。想录纯画面就写 <code>greeting: ""</code>。</dd>
+  </dl>
+  <p>按 <kbd>Ctrl</kbd> + <kbd>S</kbd> 保存，切回打开副本的浏览器，按 <kbd>Ctrl</kbd> + <kbd>R</kbd>。等树顶亮起来，看一眼灯带颜色和树下的名字。把改好的 HTML 文件单独发给朋友就能分享这款作品。</p>
+
+  <h2>录一条竖屏作品</h2>
+  <ol>
+    <li><strong>取景。</strong>手机用浏览器打开样本，竖拿录屏。电脑上用 Chrome 打开样本，按 <kbd>F12</kbd>，点开发者工具左上角的手机和平板图标，选「自适应 / Responsive」，宽高填 <strong>432 × 768</strong>。这是 9∶16 的取景比例，实际录制尺寸取决于屏幕上的选区。</li>
+    <li><strong>从开场录起。</strong>在 Windows 11 按 <kbd>Win</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd>，框选网页画面，点「开始」。刷新会播放一次约 4.5 秒的入场。想解放双手，点画面右上角的圆箭头，再移开鼠标。玫瑰款会自动演完「入场 → 爱心 → 树 → 爱心」，可留 15 秒录完整轮。</li>
+    <li><strong>拍指尖互动。</strong>开场中也可以点。落点会立刻闪光，镜头在半秒内收稳，接着执行这一次点击。拍冰晶和灯火时，各给收尾多留两秒。</li>
+  </ol>
+  <dl>
+    <dt>玫瑰星愿</dt><dd>开场先把旋转的爱心拍全，让一颗流星从画面侧边划过。等长尾里的星屑散开、淡下去，再点爱心的一侧。近处的星尘先散开，约 2.8 秒后聚成一棵粉树。多留两秒，把雾白树梢间流动的光和枝头的香槟色小灯拍进去。再点一次，树顶的星会随粒子回到心口。</dd>
+    <dt>冰晶回旋</dt><dd>在树旁留白处轻点，让六枝霜花的轮廓完整入镜。盯住花旁一片正落下的雪，它会停半拍，碎成几粒向上飞的冰晶。</dd>
+    <dt>平安夜灯火</dt><dd>先录三色粒子绕镜、从树脚向上合成松枝。分别点树脚和树梢附近的灯。火种沿灯串向上时，镜头就开始缓缓拉远，树梢的火种更快引出烟花。等一大两小三朵烟花和金色星珠亮起，再拍下垂落的金柳与镜头慢慢回到树前的过程。</dd>
+  </dl>
+  <p>动一下鼠标或轻触右上角可显示重播和暂停，控件约两秒后收起。按 <kbd>Tab</kbd> 选中画面，方向键旋转，空格或回车触发互动。系统开启「减少动态效果」时，玫瑰直接展示爱心，另外两款直接展示成树，仍可轻点体验简化效果。</p>
+  <p class="sources">按钮位置可参照 <a href="https://developer.chrome.com/docs/devtools/device-mode/">Chrome 设备模式说明</a> 和 <a href="https://support.microsoft.com/zh-cn/windows/apps/use-snipping-tool-to-capture-screenshots">Windows 区域录屏说明</a>。</p>
+
+  <h2>一条 38 秒的教程口播</h2>
+  <ol class="shots">
+    <li><time datetime="PT0S">0–4 秒</time><span><b>先放指尖结霜的特写，再切回冰面升起的蓝光。</b>“点哪儿，雪花就开在哪儿。给朋友做一棵这样的树，只改三行。”</span></li>
+    <li><time datetime="PT4S">4–10 秒</time><span><b>录桌面，复制文件，右键用记事本打开。</b>“先给自己留一份副本，搜索‘个性设置’，就在文件开头。”</span></li>
+    <li><time datetime="PT10S">10–18 秒</time><span><b>把色值改成薄荷青，保存刷新，给一秒前后对比。</b>“第一行是灯光颜色。我换成薄荷青，同一条光带就变了。”</span></li>
+    <li><time datetime="PT18S">18–26 秒</time><span><b>粒子数改成 2200，祝福语加上名字。</b>“第二行决定星尘有多密。最后一行写给谁，就把谁的名字放进来。”</span></li>
+    <li><time datetime="PT26S">26–38 秒</time><span><b>刷新，等树顶亮起，拖半圈，点树旁的留白。</b>“保存，刷新，树下就有了小满的名字。拖一下换个角度，再点这里，看雪停住，又往天上飞。”</span></li>
+  </ol>
+
+  <details>
+    <summary>手机点开文件，停在预览或源代码怎么办？</summary>
+    <p>先下载原始 HTML，再在「打开方式」里选择能运行本地网页的浏览器。也可以用同一 Wi-Fi 下的电脑给手机提供预览。</p>
+    <ol>
+      <li>电脑已安装 Python 时，在存放样本的文件夹地址栏输入 <code>powershell</code> 并回车。在打开的窗口输入 <code>python -m http.server 8000</code>。</li>
+      <li>另外打开一个终端，输入 <code>ipconfig</code>，找到正在使用的 Wi-Fi 或以太网适配器的 IPv4 地址。</li>
+      <li>例如电脑地址为 <code>192.168.1.23</code>，就在手机浏览器打开 <code>http://192.168.1.23:8000/</code>，点选对应的 HTML。录好后，在第一个终端按 <kbd>Ctrl</kbd> + <kbd>C</kbd> 结束预览。</li>
+    </ol>
+  </details>
+  <details>
+    <summary>同时维护三款源码</summary>
+    <p>单独改一份礼物，直接改它的 HTML。维护整套样本时，在 <code>src/build.mjs</code> 修改三款默认设置。爱心、螺旋和松枝分别在 <code>src/rose.js</code>、<code>src/ice.js</code>、<code>src/fir.js</code>。共用绘制在 <code>src/drawing.js</code>，彗尾、飘落物和触摸星屑在 <code>src/effects.js</code>，播放与交互在 <code>src/player.js</code>。</p>
+    <p>教程文字在 <code>src/tutorial.tmpl</code>，配图是根目录的 <code>三款预览.webp</code>。在项目目录运行 <code>node src/build.mjs</code>，会重新生成三个原名 HTML 和这份教程。自己的礼物请用单独的文件名保存。</p>
+  </details>
+  <p class="sources">爱心聚树和冰蓝螺旋的画面参考来自 <a href="https://www.douyin.com/video/7711047031062578091">John 的作品</a> 和 <a href="https://www.douyin.com/video/7709802322972862841">纯情大水牛的作品</a>。</p>
+</main>
+</body>
+</html>

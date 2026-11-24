@@ -1,0 +1,1481 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07100e">
+  <title>平安夜灯火</title>
+  <script>
+    // 个性设置 · 改完这三项，保存文件并刷新浏览器即可。
+    const SETTINGS = {
+      color: "#FFBD69",         // 主光颜色，使用六位十六进制色值
+      particleCount: 3950,        // 树身粒子数，范围 400 到 4800
+      greeting: "岁岁平安" // 祝福语，留空即可隐藏
+    };
+  </script>
+  <style>
+    :root { color-scheme: dark; background: #07100e; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body, main { width: 100%; height: 100%; margin: 0; }
+    main { position: relative; overflow: hidden; isolation: isolate; }
+    canvas, #surface { position: absolute; inset: 0; width: 100%; height: 100%; }
+    canvas { display: block; pointer-events: none; }
+    button { -webkit-tap-highlight-color: transparent; color: inherit; font: inherit; }
+    #surface {
+      border: 0; margin: 0; padding: 0; background: transparent; appearance: none;
+      touch-action: pan-y pinch-zoom; cursor: grab; -webkit-user-select: none; user-select: none;
+    }
+    #surface.is-dragging { cursor: grabbing; }
+    #surface:focus-visible { outline: 2px solid var(--ink, ivory); outline-offset: -6px; }
+    #greeting {
+      position: absolute; left: 50%; top: 85%; margin: 0; width: max-content; max-width: 88%;
+      transform: translate(-50%, -50%); pointer-events: none; text-align: center;
+      color: var(--ink, ivory); font-family: "Baskervville", "Iowan Old Style", "Palatino Linotype",
+        "Songti SC", "Noto Serif CJK SC", SimSun, Georgia, serif;
+      font-size: clamp(1.125rem, 2.8vmin, 1.75rem); font-weight: 400; line-height: 1.5;
+      letter-spacing: .13em; overflow-wrap: anywhere; text-wrap: balance;
+      text-shadow: 0 0 18px var(--haze, transparent);
+    }
+    .tools {
+      position: absolute; top: max(12px, env(safe-area-inset-top));
+      right: max(12px, env(safe-area-inset-right)); display: flex; gap: 4px;
+      opacity: 0; pointer-events: none; transition: opacity 300ms cubic-bezier(.22,1,.36,1);
+    }
+    main.awake .tools, .tools:has(button:focus-visible) { opacity: 1; pointer-events: auto; }
+    .tools button {
+      display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid transparent;
+      border-radius: 50%; background: transparent; color: var(--ink, ivory); cursor: pointer;
+      opacity: .8;
+    }
+    .tools button:hover, .tools button:focus-visible { background: #ffffff12; opacity: 1; }
+    .tools button:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+    .tools button:active { transform: scale(.94); }
+    .pause-icon { height: 12px; width: 10px; border-inline: 2px solid currentColor; }
+    #pause[data-paused="true"] .pause-icon {
+      width: 0; height: 0; border: 0; border-left: 9px solid currentColor;
+      border-top: 6px solid transparent; border-bottom: 6px solid transparent;
+    }
+    .replay-icon { position: relative; width: 15px; height: 15px; border: 1.5px solid;
+      border-left-color: transparent; border-radius: 50%; transform: rotate(-22deg); }
+    .replay-icon::after { content: ""; position: absolute; left: 0; top: -2px; width: 5px;
+      height: 5px; border-left: 1.5px solid; border-bottom: 1.5px solid; transform: rotate(12deg); }
+    .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+      clip-path: inset(50%); white-space: nowrap; border: 0; }
+    noscript { position: absolute; inset: 45% 5% auto; text-align: center; color: white; }
+    @media (prefers-reduced-motion: reduce) { .tools { transition: none; } }
+  </style>
+</head>
+<body>
+  <main id="stage">
+    <h1 class="sr">平安夜灯火</h1>
+    <canvas id="art" aria-hidden="true"></canvas>
+    <button type="button" id="surface" aria-label="与粒子互动"></button>
+    <p id="greeting"></p>
+    <div class="tools" role="group" aria-label="播放控制">
+      <button type="button" id="replay" aria-label="重播完整演示" title="重播完整演示"><span class="replay-icon" aria-hidden="true"></span></button>
+      <button type="button" id="pause" aria-label="暂停动画" title="暂停动画"><span class="pause-icon" aria-hidden="true"></span></button>
+    </div>
+    <noscript>请用启用了 JavaScript 的浏览器打开这棵树。</noscript>
+  </main>
+  <script>
+    "use strict";
+// ── 画布、空间坐标与光点 ──────────────────────────────
+// 树脚高度为 0，树尖为 1。横向和纵深坐标以树脚半径为单位。
+const TAU = Math.PI * 2;
+const clamp = (n, low, high) => Math.min(high, Math.max(low, n));
+const mix = (a, b, t) => a + (b - a) * t;
+function smooth(low, high, value) {
+  const t = clamp((value - low) / (high - low), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+function randomFrom(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+const blend = (a, b, n) => a.map((v, i) => Math.round(mix(v, b[i], n)));
+const rgb = (c, a = 1) => "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + a + ")";
+const ivory = [255, 250, 235];
+function readColor(hex) {
+  const match = /^#?([\da-f]{6})$/i.exec(String(hex).trim());
+  const n = parseInt(match ? match[1] : "ffe0b0", 16);
+  return [n >> 16, (n >> 8) & 255, n & 255];
+}
+
+function softLight(ctx, x, y, rx, ry, tint, strength) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(rx, ry);
+  const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+  gradient.addColorStop(0, rgb(tint, strength));
+  gradient.addColorStop(.38, rgb(tint, strength * .55));
+  gradient.addColorStop(1, rgb(tint, 0));
+  ctx.fillStyle = gradient;
+  ctx.fillRect(-1, -1, 2, 2);
+  ctx.restore();
+}
+function makeGlow(tint) {
+  const tile = document.createElement("canvas");
+  tile.width = tile.height = 64;
+  const c = tile.getContext("2d");
+  const g = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, rgb(ivory));
+  g.addColorStop(.075, rgb(blend(tint, ivory, .72), .98));
+  g.addColorStop(.19, rgb(tint, .61));
+  g.addColorStop(.43, rgb(tint, .17));
+  g.addColorStop(1, rgb(tint, 0));
+  c.fillStyle = g;
+  c.fillRect(0, 0, 64, 64);
+  return tile;
+}
+// 一枚笔刷包含细尘、晕光和几粒亮晶。同一片枝层叠印后仍有颗粒感。
+function makeDustBrushes(accent) {
+  const rand = randomFrom(89617);
+  return Array.from({ length: 12 }, (_, variant) => {
+    const tile = document.createElement("canvas");
+    tile.width = tile.height = 64;
+    const c = tile.getContext("2d");
+    const pale = blend(accent, ivory, .76);
+    softLight(c,32,32,30,23,accent,.095 + (variant % 3) * .015);
+    for (let i = 0; i < 61; i++) {
+      const x = 32 + (rand() + rand() + rand() - 1.5) * 24;
+      const y = 32 + (rand() + rand() + rand() - 1.5) * 17;
+      const s = .66 + rand() ** 2 * 2.55;
+      c.fillStyle = rgb(i % 3 ? accent : pale, .34 + .62 * rand());
+      c.fillRect(x, y, s, s);
+    }
+    c.fillStyle = rgb(pale, .94);
+    c.fillRect(31,31,2.45,2.45);
+    return tile;
+  });
+}
+function stamp(ctx, tile, x, y, radius) {
+  ctx.drawImage(tile, x - radius, y - radius, radius * 2, radius * 2);
+}
+
+function makeSpeck(rand) {
+  return {
+    x: 0, y: 0, z: 0, size: .43 + rand() ** 2 * 1.26, phase: rand() * TAU,
+    speed: .8 + rand() * 2.4, tone: Math.floor(rand() * 5),
+    bright: .52 + rand() * .48, gem: rand() < .068,
+    kick: rand() * 2 - 1,
+    brush: Math.floor(rand() * 12), cluster: rand() ** 1.2
+  };
+}
+function project(f, x, y, z, out) {
+  const across = x * f.cos + z * f.sin;
+  const depth = z * f.cos - x * f.sin;
+  out.x = f.cx + across * f.r * (1 + depth * (.055 + f.parallax));
+  out.y = f.base - y * f.h + depth * f.r * (.178 + (.5 - y) * .078 + f.pitch);
+  out.z = depth;
+  return out;
+}
+const pixel = {};
+function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1) {
+  if (opacity <= .008) return;
+  const q = project(f, x, y, z, pixel);
+  const near = clamp(.72 + q.z * .28, .34, 1.15);
+  const twinkle = .74 + .26 * Math.sin(f.clock * p.speed + p.phase);
+  const side = Math.max(.70, p.size * f.unit * (.89 + near * .34));
+  const c = f.ctx;
+  const light = clamp(opacity * p.bright * near * (.83 + .26 * twinkle), 0, 1);
+  if (f.brushes && p.cluster > .18) {
+    c.globalAlpha = Math.min(1, light * (.76 + p.cluster * .24)) * grain;
+    const spread = f.unit * (4.7 + 6.9 * p.cluster);
+    stamp(c, f.brushes[p.brush], q.x, q.y, spread);
+  }
+  c.globalAlpha = light;
+  c.fillStyle = f.inks[p.tone];
+  c.fillRect(q.x - side / 2, q.y - side / 2, side, side);
+  if (p.gem && twinkle > .75) {
+    c.globalAlpha *= .88;
+    stamp(c, f.glow, q.x, q.y, side * (1.65 + twinkle * 2.3));
+    if (p.cluster > .69 && twinkle > .89) gleam(c,q.x,q.y,side * 3.6,f.inks[3],light * twinkle,.15);
+  }
+}
+
+function gleam(c, x, y, radius, tint, alpha = 1, angle = 0) {
+  if (alpha < .01 || radius < .2) return;
+  c.save();
+  c.globalAlpha = clamp(alpha, 0, 1);
+  c.translate(x, y);
+  c.rotate(angle);
+  c.fillStyle = tint;
+  c.beginPath();
+  c.moveTo(0, -radius);
+  const thin = radius * .042;
+  c.bezierCurveTo(thin,-thin,thin,-thin,radius * .80,0);
+  c.bezierCurveTo(thin,thin,thin,thin,0,radius);
+  c.bezierCurveTo(-thin,thin,-thin,thin,-radius * .80,0);
+  c.bezierCurveTo(-thin,-thin,-thin,-thin,0,-radius);
+  c.fill();
+  c.restore();
+}
+function facetedStar(f, x, y, r, turn, alpha, shades) {
+  if (alpha < .012) return;
+  const c = f.ctx;
+  const stretch = .44 + .56 * Math.abs(Math.cos(turn));
+  const ridge = Math.sin(turn) * r * .25;
+  const points = [];
+  for (let i = 0; i < 10; i++) {
+    const a = i * Math.PI / 5 - Math.PI / 2;
+    const radius = (i % 2 ? .43 : 1) * r;
+    points.push([Math.cos(a) * radius * stretch, Math.sin(a) * radius]);
+  }
+  c.save();
+  c.globalAlpha = alpha;
+  stamp(c, f.glow, x, y, r * 2.65);
+  c.translate(x, y);
+  for (let i = 0; i < 10; i++) {
+    const next = points[(i + 1) % 10];
+    c.fillStyle = shades[(i + (Math.sin(turn) < 0 ? 2 : 0)) % shades.length];
+    c.beginPath();
+    c.moveTo(ridge, -r * .05);
+    c.lineTo(points[i][0], points[i][1]);
+    c.lineTo(next[0], next[1]);
+    c.closePath();
+    c.fill();
+  }
+  c.restore();
+}
+
+// 一条光带分背面和正面绘制，中间插入树身，旋转时保留前后遮挡。
+function makeRibbon(turns, phase, radiusAt, yAt = u => .025 + u * .94) {
+  const points = [];
+  const steps = Math.ceil(Math.abs(turns) * 72);
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps;
+    const a = phase + u * turns * TAU;
+    const r = radiusAt(u);
+    points.push({ x: Math.cos(a) * r, y: yAt(u, a), z: Math.sin(a) * r, u });
+  }
+  return points;
+}
+function drawRibbon(f, points, end, front, width, tint, core, strength) {
+  if (strength < .01 || end <= 0) return;
+  const c = f.ctx;
+  const q = {};
+  let penDown = false;
+  c.beginPath();
+  for (const p of points) {
+    if (p.u > end) break;
+    project(f, p.x, p.y, p.z, q);
+    if ((q.z >= 0) !== front) { penDown = false; continue; }
+    if (penDown) c.lineTo(q.x, q.y);
+    else c.moveTo(q.x, q.y);
+    penDown = true;
+  }
+  c.lineCap = "round";
+  c.strokeStyle = tint;
+  c.lineWidth = width * f.unit * 4;
+  c.globalAlpha = strength * (front ? .12 : .033);
+  c.stroke();
+  c.lineWidth = Math.max(.48, width * f.unit);
+  c.globalAlpha = strength * (front ? .84 : .21);
+  c.stroke();
+  c.lineWidth = Math.max(.4, width * f.unit * .39);
+  c.strokeStyle = core;
+  c.globalAlpha = strength * (front ? .87 : .15);
+  c.stroke();
+  c.globalAlpha = 1;
+}
+
+function paintSky(f, scene) {
+  const { w, height, cx, base, r, h } = f;
+  const tile = document.createElement("canvas");
+  const scale = Math.min(f.dpr, 1.45);
+  tile.width = Math.ceil(w * scale);
+  tile.height = Math.ceil(height * scale);
+  const c = tile.getContext("2d", { alpha: false });
+  c.scale(tile.width / w, tile.height / height);
+  const sky = scene.sky;
+  const rand = randomFrom(scene.seed + 23);
+  c.fillStyle = sky.base;
+  c.fillRect(0, 0, w, height);
+  softLight(c, cx, base - h * .46, Math.max(r * 2.65, w * .39), h * 1.02, sky.air, .38);
+  softLight(c, cx - r * .67, base - h * .27, r * 1.53, h * .48, sky.air, .20);
+  softLight(c, cx + r * .42, base - h * .83, r * 1.8, h * .41, sky.air, .18);
+  const stars = Math.round(clamp(w * height / 2650, 78, 560) * sky.stars);
+  for (let i = 0; i < stars; i++) {
+    const x = rand() * w, y = rand() * height;
+    const size = .35 + rand() ** 3 * 1.05;
+    c.fillStyle = rgb(i % 5 ? sky.star : ivory, .15 + rand() * .47);
+    c.beginPath(); c.arc(x, y, size, 0, TAU); c.fill();
+    if (i % 38 === 2) gleam(c, x, y, size * 3.35, rgb(sky.star), .42);
+  }
+  if (scene.backdrop) scene.backdrop(c, f, rand);
+  return tile;
+}
+// 地面星尘用树脚半径作单位。只生成一次坐标；镜头、自转和拖动都走树身的投影。
+function makeGroundArc(start,end) {
+  const steps=Math.ceil((end-start)*14);
+  return Array.from({length:steps+1},(_,i)=>{
+    const a=mix(start,end,i/steps);
+    return {x:Math.cos(a),z:Math.sin(a)};
+  });
+}
+function makeGround(scene) {
+  const {sky}=scene, rand=randomFrom(scene.seed+193);
+  const groups=[sky.star,ivory].flatMap(tint=>
+    Array.from({length:6},(_,i)=>({ink:rgb(tint,.13+i*.095),points:[]})));
+  const arcs=[], glints=[];
+  sky.rings.forEach((radius,i)=>{
+    const clusters=Array.from({length:3},()=>rand()*TAU);
+    for (const a of clusters) {
+      glints.push({x:radius*Math.cos(a),z:radius*Math.sin(a),size:1.2+rand()*.87});
+    }
+    if (sky.spread<.10) {
+      arcs.push({radius,points:makeGroundArc(.1+i*.47,Math.PI*(1.88-i*.06)),
+        ink:rgb(sky.star,.12/(1+i*.3))});
+    }
+    const total=Math.round(220+radius*175);
+    for (let j=0;j<total;j++) {
+      // 少量密集的星点给每一圈留下可以跟随的亮斑。
+      const angle=j%7===0 ? clusters[j%3]+(rand()+rand()-1)*.16 : rand()*TAU;
+      const r=radius+(rand()-.5)*sky.spread*(1+i*.15);
+      const light=(.12+rand()*.48)*(1-i*.075);
+      const index=clamp(Math.round((light-.13)/.095),0,5)+(rand()>.83 ? 6 : 0);
+      groups[index].points.push({x:Math.cos(angle)*r,z:Math.sin(angle)*r,
+        offset:(rand()-.5)*2.3,size:.48+rand()**2*1.24});
+    }
+  });
+  const haze=document.createElement("canvas");
+  haze.width=192; haze.height=48;
+  softLight(haze.getContext("2d"),96,24,96,24,sky.air,.40);
+  return {groups,arcs,glints,haze,ink:rgb(sky.star)};
+}
+function groundLevel(f) { return -.085*f.r/f.h; }
+function drawGroundArc(f,level,radius,points) {
+  const c=f.ctx, q={};
+  c.beginPath();
+  for (let i=0;i<points.length;i++) {
+    const p=points[i];
+    project(f,p.x*radius,level,p.z*radius,q);
+    if (i) c.lineTo(q.x,q.y); else c.moveTo(q.x,q.y);
+  }
+  c.stroke();
+}
+function drawGround(f,yaw=f.yaw) {
+  const view=yaw===f.yaw ? f : {...f,cos:Math.cos(yaw),sin:Math.sin(yaw)};
+  const c=f.ctx, ground=f.ground, level=groundLevel(f), q={};
+  c.save();
+  c.globalAlpha=1;
+  c.drawImage(ground.haze,f.cx-f.r*1.72,f.base-f.r*.17,f.r*3.44,f.r*.54);
+  c.lineWidth=.69*f.unit;
+  for (const arc of ground.arcs) {
+    c.strokeStyle=arc.ink;
+    drawGroundArc(view,level,arc.radius,arc.points);
+  }
+  for (const group of ground.groups) {
+    c.fillStyle=group.ink;
+    c.beginPath();
+    for (const p of group.points) {
+      project(view,p.x,level,p.z,q);
+      const size=p.size*f.unit;
+      c.rect(q.x-size*.5,q.y+(p.offset-p.size*.37)*f.unit,size,size*.74);
+    }
+    c.fill();
+  }
+  for (const p of ground.glints) {
+    project(view,p.x,level,p.z,q);
+    const size=p.size*f.unit, light=.60+.16*clamp(q.z,-1,1);
+    c.globalAlpha=light; stamp(c,f.glow,q.x,q.y,size*2.45);
+    gleam(c,q.x,q.y,size*1.85,ground.ink,light,.2);
+  }
+  c.restore();
+}
+function makeSnow(rand, count) {
+  return Array.from({ length: count }, () => ({
+    x: rand(), y: rand(), phase: rand() * TAU, speed: .5 + rand(),
+    radius: .48 + rand() ** 3 * 1.85, alpha: .14 + rand() * .38
+  }));
+}
+function snowPosition(f, p, drift, out) {
+  out.x = p.x * f.w + Math.sin(f.clock * .22 * p.speed + p.phase) * 10 * f.unit;
+  out.y = ((p.y * (f.height + 24) + f.clock * drift * p.speed) % (f.height + 24)) - 12;
+  return out;
+}
+function drawSnow(f, snow, scene) {
+  const c = f.ctx, q = {};
+  c.fillStyle = rgb(scene.sky.star);
+  for (const p of snow) {
+    q.lockAlpha=1;
+    snowPosition(f,p,scene.drift,q);
+    if (p.frozen) holdFlake(f,p,q);
+    const {x,y} = q;
+    const radius = p.radius * f.unit;
+    c.globalAlpha=p.alpha*(.85+.15*Math.sin(p.phase+f.clock*.9))*q.lockAlpha;
+    c.beginPath(); c.arc(x, y, radius * .62, 0, TAU); c.fill();
+    if (p.radius > 1.91) stamp(c, f.glow, x, y, radius * 2.5);
+  }
+  c.globalAlpha = 1;
+}
+// ── 可复用的粒子特效。时间和视角由播放器统一传入。 ──────────
+function makeComet(rand, count, tint, highlight) {
+  const grains = Array.from({ length: count }, () => ({
+    offset: rand(), x: (rand() - .5) * 2, y: (rand() - .5) * 2,
+    phase: rand() * TAU, size: .44 + rand() ** 2 * 1.25, hot: rand() > .68
+  }));
+  return { grains, tint: rgb(tint), core: rgb(highlight), glow: makeGlow(tint) };
+}
+function projectRibbonAt(f, route, u, out) {
+  const index = clamp(u, 0, 1) * (route.length - 1);
+  const a = route[Math.floor(index)], b = route[Math.min(route.length - 1, Math.floor(index) + 1)];
+  const k = index % 1;
+  return project(f, mix(a.x,b.x,k), mix(a.y,b.y,k), mix(a.z,b.z,k), out);
+}
+// sample(u, out) 返回屏幕位置和纵深。彗核、轨迹和四散的细尘共用同一路径。
+function drawComet(f, comet, head, span, sample, intensity) {
+  if (intensity < .012) return;
+  const c = f.ctx, q = {}, prev = {};
+  c.save();
+  c.globalCompositeOperation = "lighter";
+  c.lineCap = "round";
+  sample(head,prev);
+  for (let i = 1; i <= 25; i++) {
+    const lag = i / 25, u = head - span * lag;
+    sample(u,q);
+    const near = clamp(.76 + q.z * .38,.24,1);
+    c.globalAlpha = intensity * (1 - lag) ** 1.3 * near;
+    c.strokeStyle = i < 6 ? comet.core : comet.tint;
+    c.lineWidth = f.unit * (.4 + 1.45 * (1 - lag));
+    c.beginPath(); c.moveTo(prev.x,prev.y); c.lineTo(q.x,q.y); c.stroke();
+    prev.x = q.x; prev.y = q.y;
+  }
+  for (const p of comet.grains) {
+    const lag = (p.offset + f.clock * .29) % 1;
+    sample(head - span * lag, q);
+    const width = f.unit * (1.6 + 11 * lag ** .8);
+    const x = q.x + (p.x + .19 * Math.sin(p.phase + lag * 5)) * width;
+    const y = q.y + (p.y + .34 * lag) * width;
+    c.globalAlpha = intensity * (.18 + .78 * (1 - lag)) * clamp(.78 + q.z * .38,.25,1);
+    c.fillStyle = p.hot ? comet.core : comet.tint;
+    const size = p.size * f.unit;
+    c.fillRect(x,y,size,size);
+  }
+  sample(head,q);
+  const near = clamp(.78 + q.z * .36,.25,1);
+  c.globalAlpha = intensity * near;
+  stamp(c,comet.glow,q.x,q.y,14 * f.unit);
+  gleam(c,q.x,q.y,8 * f.unit,comet.core,intensity * near,.19);
+  c.restore();
+}
+
+// 有正反面的飘落物沿不同半径绕树。纹理只生成一次。
+function makeFallingField(rand, count, tiles, size, fallSpeed) {
+  const flakes = Array.from({length:count}, () => ({
+    start: rand(), angle: rand() * TAU, speed: fallSpeed * (.59 + rand() * .78),
+    orbit: .58 + rand() * .94, sway: .15 + rand() * .51, roll: rand() * TAU,
+    turn: (rand() - .5) * 1.65, size: size * (.42 + rand() ** 2 * 1.03),
+    tile: tiles[Math.floor(rand() * tiles.length)]
+  }));
+  return flakes;
+}
+function fallingPosition(f, p, q) {
+  const fall = (p.start + f.clock * p.speed) % 1;
+  const angle = p.angle + fall * TAU * p.sway + .16 * Math.sin(f.clock * .47 + p.roll);
+  const orbit = p.orbit * (.79 + fall * .29);
+  project(f,Math.cos(angle)*orbit,1.13-fall*1.18,Math.sin(angle)*orbit,q);
+  q.fall=fall; q.angle=angle; q.turn=p.roll+f.clock*p.turn;
+  return q;
+}
+// 雪先悬停，碎裂时淡出原雪片，最后接回落雪轨迹。碎片从锁定的位置发射。
+function holdFlake(f,p,q) {
+  const lock=p.frozen, age=f.clock-lock.at, ease=smooth(.91,1.72,age);
+  if (ease>=1) { p.frozen=null; return; }
+  q.x=mix(lock.x*f.w,q.x,ease); q.y=mix(lock.y*f.height,q.y,ease);
+  q.lockAlpha=1-smooth(.47,.60,age)+smooth(1.06,1.72,age);
+  if (lock.z!==undefined) {
+    q.z=mix(lock.z,q.z,ease); q.turn=mix(lock.turn,q.turn,ease);
+    q.angle=mix(lock.angle,q.angle,ease); q.fall=mix(lock.fall,q.fall,ease);
+  }
+}
+function drawFallingField(f, flakes, front, intensity) {
+  if (intensity < .01) return;
+  const c = f.ctx, q = {};
+  c.save();
+  for (const p of flakes) {
+    q.lockAlpha=1;
+    fallingPosition(f,p,q);
+    if (p.frozen) holdFlake(f,p,q);
+    const {fall,angle,turn}=q;
+    if ((q.z >= 0) !== front) continue;
+    const fade = smooth(0,.085,fall) * (1 - smooth(.87,1,fall));
+    c.globalAlpha=intensity*fade*(front?.88:.36)*q.lockAlpha;
+    const radius = p.size * f.unit * clamp(.97 + q.z * .20,.68,1.24);
+    const fold = .38 + .62 * Math.abs(Math.cos(turn * .82 + angle));
+    c.save();
+    c.translate(q.x,q.y); c.rotate(turn);
+    c.drawImage(p.tile,-radius * fold,-radius,radius * 2 * fold,radius * 2);
+    c.restore();
+  }
+  c.restore();
+}
+
+function makeTouchSparks(rand, count, accent, second) {
+  const colors = [rgb(accent),rgb(second),rgb(blend(accent,ivory,.88))];
+  const sparks = Array.from({length:count}, (_, i) => ({
+    angle: rand() * TAU, distance: .23 + rand() ** .72 * .90, bend: (rand() - .5) * .65,
+    delay: rand() * .20, life: .70 + rand() * .49, drop: rand() * .27,
+    size: .6 + rand() ** 2 * 1.55, color: colors[i % 3]
+  }));
+  return { sparks, glow: makeGlow(second), core: colors[2] };
+}
+function drawTouchSparks(f, effect, age, origin) {
+  if (age === null || age > 1.42) return;
+  const c = f.ctx, x = origin.x * f.w, y = origin.y * f.height;
+  c.save(); c.globalCompositeOperation = "lighter"; c.lineCap = "round";
+  for (const p of effect.sparks) {
+    const life = (age - p.delay) / p.life;
+    if (life <= 0 || life >= 1) continue;
+    const t = 1 - (1 - life) ** 2.7, prev = Math.max(0,life - .052);
+    const reach = f.rest.r * .38;
+    const d = t * p.distance * reach, old = (1 - (1 - prev) ** 2.7) * p.distance * reach;
+    const a = p.angle + life * p.bend, b = p.angle + prev * p.bend;
+    const px = x + Math.cos(a) * d, py = y + Math.sin(a) * d + life * life * p.drop * reach;
+    const alpha = smooth(0,.08,life) * (1 - smooth(.27,1,life));
+    c.globalAlpha = alpha * .67; c.strokeStyle = p.color; c.lineWidth = p.size * f.unit * .70;
+    c.beginPath(); c.moveTo(x + Math.cos(b)*old,y + Math.sin(b)*old + prev*prev*p.drop*reach);
+    c.lineTo(px,py); c.stroke();
+    if (p.size > 1.45) {
+      c.globalAlpha = alpha; stamp(c,effect.glow,px,py,p.size * f.unit * 2.1);
+    }
+  }
+  const glint = 1 - smooth(.04,.42,age);
+  c.globalAlpha = glint * .77; stamp(c,effect.glow,x,y,15*f.unit);
+  gleam(c,x,y,14*f.unit,effect.core,glint,.22);
+  c.restore();
+}
+
+// 三层纵深的迎面星尘。镜头穿过粒子时，近处的轨迹比远处拉得更长。
+function makePassage(rand, accent, light) {
+  const grains = Array.from({length:258}, () => ({
+    a:rand()*TAU, r:.17+Math.sqrt(rand())*1.9, depth:rand(), side:rand()-.5,
+    speed:.7+rand()*.65, size:.45+rand()**2*1.7, warm:rand()>.57
+  }));
+  return {grains, ink:rgb(accent), light:rgb(light), glow:makeGlow(accent)};
+}
+function drawPassage(f, field) {
+  if (f.shot>=.90) return;
+  const c=f.ctx, fade=1-smooth(.44,.90,f.shot), u=f.shot;
+  const vanX=f.w*(.50+.135*Math.sin(u*TAU)), vanY=f.height*(.49+.095*Math.cos(u*4.5));
+  const span=Math.min(f.w*.73,f.height*.66);
+  c.save(); c.globalCompositeOperation="lighter"; c.lineCap="round";
+  for (const p of field.grains) {
+    const z=1-((p.depth+u*p.speed*1.48)%1), perspective=.43/(.12+z*1.6);
+    const a=p.a+.43*u+.13*Math.sin(p.side*5+u*3);
+    const dx=Math.cos(a)*span*p.r*perspective, dy=Math.sin(a)*span*p.r*perspective;
+    const x=vanX+dx, y=vanY+dy, near=1-z;
+    if (x < -16 || x > f.w+16 || y < -16 || y > f.height+16) continue;
+    const power=fade*smooth(0,.18,near)*(.24+.72*near);
+    c.globalAlpha=power; c.strokeStyle=p.warm?field.light:field.ink;
+    c.lineWidth=(.40+p.size*perspective*.60)*f.rest.unit;
+    const stretch=.006+.09*near**4;
+    c.beginPath(); c.moveTo(x-dx*stretch,y-dy*stretch); c.lineTo(x,y); c.stroke();
+    if (near>.64 && p.warm) stamp(c,field.glow,x,y,(2+6.8*near)*f.rest.unit);
+  }
+  c.restore();
+}
+// ── 平安夜灯火：松枝、玻璃球和依次通电的灯串 ──────────────
+function makeBauble(light, middle, shadow) {
+  const tile = document.createElement("canvas");
+  tile.width = 96; tile.height = 114;
+  const c = tile.getContext("2d");
+  c.strokeStyle = "#c6a669"; c.lineWidth = 2.4;
+  c.beginPath(); c.ellipse(48, 17, 5.7, 8, 0, 0, TAU); c.stroke();
+  const glass = c.createRadialGradient(35, 47, 1, 49, 68, 39);
+  glass.addColorStop(0, light); glass.addColorStop(.28, middle); glass.addColorStop(.72, shadow);
+  glass.addColorStop(.89, shadow); glass.addColorStop(1, middle);
+  c.fillStyle = glass;
+  c.beginPath(); c.arc(48, 67, 34, 0, TAU); c.fill();
+  const cap = c.createLinearGradient(38, 0, 58, 0);
+  cap.addColorStop(0, "#694d2d"); cap.addColorStop(.28, "#e9c782");
+  cap.addColorStop(.56, "#8a6536"); cap.addColorStop(.81, "#f5dba1"); cap.addColorStop(1, "#8c7049");
+  c.fillStyle = cap; c.fillRect(38, 25, 20, 11);
+  c.fillStyle = "rgba(255,245,220,.92)";
+  c.beginPath(); c.ellipse(35, 48, 6.3, 3.4, -.71, 0, TAU); c.fill();
+  c.fillStyle = "rgba(255,245,220,.55)";
+  c.beginPath(); c.arc(42, 44, 1.8, 0, TAU); c.fill();
+  c.strokeStyle = "rgba(255,220,170,.44)"; c.lineWidth = 1.65;
+  c.beginPath(); c.arc(48, 67, 30.1, .23, 1.28); c.stroke();
+  return tile;
+}
+function createScene(accent, count) {
+  const seed = 251202, rand = randomFrom(seed);
+  const honey = rgb(accent), cream = rgb(blend(accent, ivory, .79));
+  const inks = [[78,119,95], [124,158,121], [162,183,141], accent, blend(accent, ivory, .71)].map(color => rgb(color));
+  const needleColor = ["#244839", "#2b5946", "#3b7159", "#608c70", "#87a37d", "#a9b489"];
+  const boughColor = ["#122b24", "#143329", "#173a2e", "#1a3d31"];
+  const branches = [];
+  const levels = 11;
+  function branchPoint(b, s, side = 0) {
+    const a = b.angle + b.curl * Math.sin(s * Math.PI);
+    const r = b.length * (.10 + .90 * s);
+    const lateral = side * b.length;
+    return {
+      x: Math.cos(a) * r - Math.sin(a) * lateral,
+      z: Math.sin(a) * r + Math.cos(a) * lateral,
+      y: b.y + b.lift * ((1 - s) ** 2 - .35 * Math.sin(s * Math.PI)) + s * s * b.tip
+    };
+  }
+  for (let level = 0; level < levels; level++) {
+    const u = level / levels;
+    const perTier = Math.round(18 - 9 * u);
+    for (let j = 0; j < perTier; j++) {
+      const b = { angle: j / perTier * TAU + level * 1.83 + rand() * .105,
+        length: (1 - u) ** .84 * (.91 + rand() * .15),
+        y: .043 + u * .952 + (rand() - .5) * .034 * (1 - .45 * u),
+        lift: .093 - .040 * u, tip: .015 + rand() * .034, curl: (rand() - .5) * .37,
+        tone: Math.floor(rand() * 4) };
+      b.middle = branchPoint(b, .7);
+      b.edge = [];
+      for (const side of [-1, 1]) {
+        for (let k = 0; k <= 14; k++) {
+          const s = side < 0 ? k / 14 : 1 - k / 14;
+          const width = Math.sin(s * Math.PI) ** .73 * (k % 2 ? .158 : .094);
+          const p = branchPoint(b, s, side * width);
+          p.y -= width * .113;
+          b.edge.push(p);
+        }
+      }
+      branches.push(b);
+    }
+  }
+  const groups = needleColor.map(() => []);
+  const needles = [];
+  for (let i = 0; i < count; i++) {
+    const p = makeSpeck(rand);
+    const b = branches[Math.floor(rand() * branches.length)];
+    const s = .09 + rand() * .90, side = rand() < .5 ? -1 : 1;
+    const wing = side * Math.sin(s * Math.PI) * rand() * .162;
+    const from = branchPoint(b, s, wing);
+    const span = (.026 + rand() * .072) * (.62 + .38 * b.length);
+    const angle = b.angle + side * (.21 + rand() * .94);
+    p.x = from.x + Math.cos(angle) * span;
+    p.z = from.z + Math.sin(angle) * span;
+    p.y = from.y + (.001 + rand() * .026) * (.48 + b.length * .5);
+    p.from = from;
+    p.sprig = [];
+    if (i % 3 !== 1) {
+      for (let j = 0; j < 3; j++) {
+        const weight = .12 + j * .26;
+        const start = { x: mix(from.x,p.x,weight), y: mix(from.y,p.y,weight), z: mix(from.z,p.z,weight) };
+        const reach = (.65 - j * .145) * span;
+        const spread = .52 + rand() * .34;
+        for (const direction of [-1, 1]) {
+          const a = angle + direction * spread;
+          p.sprig.push([start,{ x: start.x + Math.cos(a)*reach, y: start.y + reach*.165,
+            z: start.z + Math.sin(a)*reach }]);
+        }
+      }
+    }
+    const group = Math.min(5, Math.floor(rand() ** 1.4 * 5.1 + s * .79));
+    groups[group].push(p);
+    if (i % 4) p.tone = Math.min(2, Math.floor(rand() * 3));
+    p.size *= .78; p.gem = p.gem && i % 3 === 0;
+    needles.push(p);
+  }
+  const radiusAt = u => (1 - u) ** .82 * 1.025;
+  const sag = (u, a) => .055 + .895 * u - .024 * (1 - u) * (.5 + .5 * Math.sin(3 * a - .7));
+  const wire = makeRibbon(4.35, 1.87, radiusAt, sag);
+  const lamps = Array.from({ length: 103 }, (_, i) => {
+    const u = i / 102, a = 1.87 + u * 4.35 * TAU, r = radiusAt(u);
+    return { u, x: Math.cos(a) * r, z: Math.sin(a) * r, y: sag(u,a), size: .76 + rand() ** 2 * .86, phase: rand() * TAU };
+  });
+  const fx = randomFrom(seed + 607);
+  const champagne = blend(accent,[255,231,168],.63);
+  const warmGlow = makeGlow(champagne);
+  const lightRunner = makeComet(fx,Math.round(29+count/105),champagne,ivory);
+  const swagRadius = u => radiusAt(u) * (1.017 + .043 * Math.sin(Math.PI * 26 * u) ** 2);
+  const swagHeight = (u,a) => sag(u,a) - (.024 + .040 * (1-u)) * Math.sin(Math.PI * 26 * u) ** 2;
+  const beadString = makeRibbon(4.35,1.87,swagRadius,swagHeight);
+  const beadCount = Math.round(120 + count/25);
+  const beads = Array.from({length:beadCount}, (_,i) => {
+    const u = (i+.5)/beadCount, a = 1.87 + u*4.35*TAU, r = swagRadius(u);
+    return { u, x: r*Math.cos(a), y: swagHeight(u,a), z: r*Math.sin(a), pendant: i%9 === 4 };
+  });
+  const drops = Array.from({length:Math.round(44+count/18)}, () => ({
+    lamp: lamps[Math.floor(fx()*(lamps.length-2))], phase: fx(), speed: .32+fx()*.48,
+    drop: .026+fx()**1.2*.11, angle: fx()*TAU, width: .024+fx()*.092, size: .54+fx()**2*1.45
+  }));
+  const flies = Array.from({length:Math.round(20+count/160)}, () => ({
+    start: fx(), angle: fx()*TAU, orbit: .89+fx()*.71, life: .07+fx()*.069,
+    size: .44+fx()**2*.76, phase: fx()*TAU
+  }));
+  // 三个花心依次离开树尖，每条余烬保留自己的速度、重力和尾色。
+  const fireworkGlow=[makeGlow([255,177,70]),makeGlow([255,91,103]),makeGlow([255,238,202]),makeGlow([100,222,181])];
+  const shells=[
+    {x:0,y:.63,delay:0,ascent:.37,reach:.70,count:184},
+    {x:-.58,y:.40,delay:.17,ascent:.46,reach:.38,count:72},
+    {x:.60,y:.44,delay:.28,ascent:.48,reach:.39,count:76}
+  ].map((shell,layer)=>({
+    ...shell,
+    sparks:Array.from({length:shell.count},(_,i)=>{
+      const a=i*2.399963+(fx()-.5)*.09, depth=fx()*2-1;
+      const tier=i%5, outer=tier>=2;
+      const distance=(outer? .91+fx()*.12 : tier===0?.39:.66)*(outer && i%3===0?1:Math.sqrt(1-depth*depth));
+      return {dx:Math.cos(a)*distance,dy:Math.sin(a)*distance,lag:fx()*.095,
+        life:1.61+fx()*.97,fall:.48+fx()*.87,sway:(fx()-.5)*.19,
+        phase:fx()*TAU,size:.65+fx()**2*1.46,split:i%12===3,near:.67+.33*(depth+1)*.5,
+        color:layer===1 ? (i%3?1:0) : layer===2 ? (i%3?3:2) : tier===0?1:tier===1?2:i%4?0:2};
+    })
+  }));
+  const pearls=Array.from({length:76},(_,i)=>({
+    a:i*TAU/76,phase:fx()*TAU,size:.69+fx()*.84,fall:.82+fx()*.34
+  }));
+  const satellites=Array.from({length:7},(_,i)=>({
+    angle:(i+.17)*TAU/7,at:.73+.24*(i%3)+fx()*.08,reach:.11+fx()*.075
+  }));
+  const willow=Array.from({length:70},(_,i)=>({
+    a:i*TAU/70+fx()*.035,spread:.65+fx()*.36,drop:.71+fx()*.93,
+    at:.77+fx()*.48,life:1.51+fx()*.84,drift:(fx()-.5)*.26,phase:fx()*TAU
+  }));
+  const balls = Array.from({ length: 27 }, (_, i) => {
+    const u = .065 + .76 * ((i + rand() * .5) / 27);
+    const a = .96 + i * 2.39996 + Math.sin(i * 7.21) * .13, r = radiusAt(u) * (.88 + rand() * .09);
+    return { x: Math.cos(a) * r, z: Math.sin(a) * r, y: u + .025, u,
+      radius: (.044 + rand() * .030) * (1 - u * .45), kind: i % 5 === 2 ? 1 : 0 };
+  });
+  const glass = [makeBauble("#f59c78", "#bd3b41", "#480e1b"), makeBauble("#fff1be", "#d49e58", "#614229")];
+  const shades = ["#fff6d2", "#a16c32", honey, cream, "#aa763c", "#ffedab", "#bc803a", cream, honey, "#f9dd9b"];
+  const wideZoom=.855;
+  let relays=[];
+  let pullFrom, holdUntil, cameraTime, distance, velocity;
+  function reset() {
+    relays=[];
+    pullFrom=Infinity; holdUntil=-Infinity; cameraTime=0; distance=0; velocity=0;
+  }
+  // 临界阻尼的解析解。连点或在回程中再点时，镜头从原位置和原速度继续。
+  function followCamera(seconds,target) {
+    if (seconds<=0 || (distance===target && velocity===0)) return;
+    const rate=target ? 2.75 : 1.95;
+    const offset=distance-target, carry=velocity+rate*offset, decay=Math.exp(-rate*seconds);
+    distance=target+(offset+carry*seconds)*decay;
+    velocity=(velocity-rate*carry*seconds)*decay;
+    if (Math.abs(distance-target)+Math.abs(velocity)<.00004) { distance=target; velocity=0; }
+  }
+  function reframe(f) {
+    const now=f.clock;
+    const start=clamp(pullFrom,cameraTime,now), end=clamp(holdUntil,start,now);
+    followCamera(start-cameraTime,0);
+    followCamera(end-start,1);
+    followCamera(now-end,0);
+    cameraTime=now;
+    const zoom=wideZoom**distance;
+    f.h*=zoom; f.r*=zoom; f.unit*=zoom;
+    f.base+=f.rest.r*.15*(1-zoom);
+  }
+  function tap(f,point) {
+    let lamp=lamps[0],best=Infinity;
+    const x=point.x*f.w,y=point.y*f.height,q={};
+    for (const p of lamps) {
+      project(f,p.x,p.y,p.z,q);
+      const distance=(q.x-x)**2+(q.y-y)**2;
+      if (distance<best) { best=distance; lamp=p; }
+    }
+    const pickup=.23, travel=.10+(1-lamp.u)*1.66, arrival=pickup+travel+.16;
+    if (!f.quiet) {
+      const ignition=f.clock+arrival, lead=Math.max(f.clock,ignition-1.35);
+      pullFrom=f.clock>=holdUntil ? lead : Math.min(pullFrom,lead);
+      holdUntil=Math.max(holdUntil,ignition+2.9);
+    }
+    relays=f.quiet ? [] : relays.slice(-4);
+    relays.push({point,lamp,pickup,travel,arrival,at:f.clock,quiet:f.quiet});
+  }
+  function relayPoint(f,relay,age,out) {
+    const p=relay.lamp;
+    if (age<relay.pickup) {
+      project(f,p.x,p.y,p.z,out);
+      const v=smooth(0,relay.pickup,age);
+      out.x=mix(relay.point.x*f.w,out.x,v);
+      out.y=mix(relay.point.y*f.height,out.y,v)-Math.sin(v*Math.PI)*f.r*.07;
+    } else if (age<relay.pickup+relay.travel) {
+      projectRibbonAt(f,wire,mix(p.u,1,(age-relay.pickup)/relay.travel),out);
+    } else {
+      const rise=smooth(relay.pickup+relay.travel,relay.arrival,age);
+      project(f,0,mix(lamps[lamps.length-1].y,.998,rise),0,out);
+    }
+    return out;
+  }
+  function drawRelays(f) {
+    const q={},c=f.ctx;
+    for (const relay of relays) {
+      const age=f.clock-relay.at, p=relay.lamp;
+      if (relay.quiet) {
+        project(f,p.x,p.y,p.z,q);
+        gleam(c,q.x,q.y,10*f.unit,cream,1-smooth(.4,1.2,age),.13);
+        if (age<1.2) drawCrown(f,1.18,true);
+        continue;
+      }
+      drawComet(f,lightRunner,age,.24,(t,out)=>relayPoint(f,relay,Math.max(0,t),out),
+        1-smooth(relay.arrival,relay.arrival+.21,age));
+      const arrivalGlow=smooth(relay.arrival-.10,relay.arrival+.06,age)*(1-smooth(relay.arrival+.07,relay.arrival+.63,age));
+      if (arrivalGlow>.003) {
+        project(f,0,.998,0,q); stamp(c,warmGlow,q.x,q.y,f.r*.17*arrivalGlow);
+        gleam(c,q.x,q.y,f.r*(.13+.11*arrivalGlow),cream,arrivalGlow,.14);
+      }
+      drawCrown(f,age-relay.arrival);
+    }
+  }
+  const entryColors=[champagne,blend(accent,[241,89,90],.84),[148,226,182]];
+  const entryInks=entryColors.map(color=>rgb(color));
+  const entryGlows=entryColors.map(makeGlow);
+  const entryDust=entryColors.map(makeDustBrushes);
+  const entryComets=entryColors.map(color=>makeComet(fx,65,color,ivory));
+  function streamPoint(lane,position,time,out) {
+    const a=lane*TAU/3+position*5.7+time*3.9;
+    const r=1.24-.50*position+.12*Math.cos(3.8*position+lane);
+    out.x=Math.cos(a)*r; out.z=Math.sin(a)*r;
+    out.y=.08+position*.69+.13*Math.sin(a+.54);
+    return out;
+  }
+  function entrance(f) {
+    const progress=f.shot, power=1-smooth(.68,.99,progress);
+    const c=f.ctx, q={}, tail={};
+    for (let lane=0;lane<3;lane++) {
+      const route=(u,out)=>{
+        const v=clamp(u,0,1), source=streamPoint(lane,v,progress,out);
+        const land=smooth(.43,.96,v);
+        return project(f,source.x*(1-land),mix(source.y,.998,land),source.z*(1-land),out);
+      };
+      // 在同一股粒流里叠出细丝、尘雾和少数近景亮星。最后都向树尖收束。
+      c.save(); c.globalCompositeOperation="lighter"; c.lineCap="round";
+      const veil=power*(1-smooth(.53,.96,progress));
+      const start=.03+.40*progress, end=.83+.17*progress;
+      for (let strand=0;strand<4;strand++) {
+        c.beginPath();
+        for (let j=0;j<=65;j++) {
+          const u=mix(start,end,j/65); route(u,q);
+          const fade=Math.sin(j/65*Math.PI), offset=(strand-1.5)*f.unit*2.7*fade;
+          const x=q.x+offset*Math.cos(u*14+lane+progress*4);
+          const y=q.y+offset*Math.sin(u*17+lane+progress*4);
+          if (j) c.lineTo(x,y); else c.moveTo(x,y);
+        }
+        c.strokeStyle=entryInks[lane]; c.lineWidth=f.unit*(strand===1?3.6:.70);
+        c.globalAlpha=veil*(strand===1?.095:.31); c.stroke();
+      }
+      for (let j=1;j<111;j++) {
+        const u=mix(start,end,j/111), wind=u*32+lane*2+progress*5.3;
+        route(u,q); route(u-.007,tail);
+        const flicker=.45+.49*Math.sin(wind*1.38)**2;
+        const envelope=Math.sin(j/111*Math.PI)**.70;
+        const off=f.unit*(3+j%7)*Math.sin(wind*1.7);
+        const x=q.x+off*Math.cos(wind), y=q.y+off*Math.sin(wind);
+        c.globalAlpha=veil*envelope*flicker*(q.z>0?.80:.49);
+        stamp(c,entryDust[lane][j%12],x,y,f.unit*(6.7+4.5*flicker));
+        if (j%9===2) {
+          stamp(c,entryGlows[lane],x,y,f.unit*(6+6*flicker));
+          c.beginPath(); c.moveTo(tail.x,tail.y); c.lineTo(x,y); c.strokeStyle=entryInks[lane];
+          c.lineWidth=f.unit*.65; c.stroke();
+        }
+      }
+      c.restore();
+      drawComet(f,entryComets[lane],.14+.85*progress,.185,route,power*(lane? .84:1));
+    }
+  }
+  function drawAssembly(f) {
+    if (f.shot>=.99) return;
+    const c=f.ctx, source={}, q={}, tail={};
+    c.save(); c.globalCompositeOperation="lighter"; c.lineCap="round";
+    for (let i=0;i<needles.length;i++) {
+      const p=needles[i], lane=i%3;
+      const start=.035+.37*p.y+.11*p.cluster;
+      const land=smooth(start,start+.47,f.shot);
+      if (land>=.998) continue;
+      const loose=1-land, strength=.91*(1-smooth(.74,1,land));
+      const height=p.y+.18*p.kick;
+      streamPoint(lane,height,f.shot,source);
+      const phi=p.phase+land*4.3, spread=(.055+.24*p.cluster)*loose;
+      const x=mix(source.x,p.x,land)+Math.cos(phi)*spread;
+      const z=mix(source.z,p.z,land)+Math.sin(phi)*spread;
+      const y=mix(source.y,p.y,land)+p.kick*spread*.64+.071*Math.sin(land*Math.PI);
+      project(f,x,y,z,q);
+      const near=clamp(.73+.23*q.z,.29,1), size=f.unit*(.52+p.size*.73);
+      c.globalAlpha=strength*near*(.53+.40*Math.sin(phi+f.clock*1.13)**2);
+      c.fillStyle=entryInks[lane]; c.fillRect(q.x,q.y,size,size);
+      if (p.gem || i%17===0) {
+        stamp(c,entryGlows[lane],q.x,q.y,size*(3.1+1.6*p.cluster));
+        const arc=.049*loose;
+        project(f,x+source.z*arc,y-arc*.10,z-source.x*arc,tail);
+        c.strokeStyle=entryInks[lane]; c.lineWidth=f.unit*.62;
+        c.beginPath(); c.moveTo(tail.x,tail.y); c.lineTo(q.x,q.y); c.stroke();
+        if (p.gem && p.cluster>.72) gleam(c,q.x,q.y,size*3.1,cream,strength*near,.16);
+      }
+    }
+    c.restore();
+  }
+  function backdrop(c, f, random) {
+    // 树后的远景压低亮度，让近处红玻璃球和灯芯保持清楚。
+    for (let i = 0; i < 36; i++) {
+      const x = random() * f.w;
+      const y = f.base + (random() - .5) * f.h * .05;
+      const h = f.h * (.038 + random() ** 2 * .18);
+      c.fillStyle = i % 2 ? "rgba(6,20,18,.62)" : "rgba(13,35,31,.51)";
+      c.beginPath(); c.moveTo(x, y - h);
+      for (let tier = 1; tier <= 5; tier++) {
+        c.lineTo(x + h * .24 * tier / 5, y - h + h * tier / 5);
+        c.lineTo(x + h * .16 * tier / 5, y - h + h * tier / 5);
+      }
+      for (let tier = 5; tier >= 1; tier--) {
+        c.lineTo(x - h * .24 * tier / 5, y - h + h * tier / 5);
+        c.lineTo(x - h * .135 * tier / 5, y - h + h * (tier - 1) / 5);
+      }
+      c.closePath(); c.fill();
+    }
+    for (let i = 0; i < 34; i++) {
+      const x = random() * f.w, y = f.base - random() ** 1.8 * f.h * .59;
+      if (Math.abs(x - f.cx) < f.r * .85) continue;
+      const radius = (1.5 + random() ** 2 * 6) * f.unit;
+      softLight(c, x, y, radius * 1.8, radius * 1.8, accent, .14);
+      c.fillStyle = rgb(accent, .09); c.beginPath(); c.arc(x,y,radius*.61,0,TAU); c.fill();
+    }
+  }
+  function drawLights(f, level, front) {
+    const c = f.ctx, q = {};
+    for (let i = 0; i < lamps.length; i++) {
+      const p = lamps[i];
+      project(f, p.x, p.y, p.z, q);
+      if ((q.z >= 0) !== front) continue;
+      const lit = smooth(-.008, .042, level - p.u);
+      const energy=(.14+.86*lit)*(front?1:.38)*smooth(-.05,.07,f.growth-p.y);
+      if (energy < .014) continue;
+      const breath = .91 + .09 * Math.sin(f.clock * 1.54 + p.phase);
+      const r = f.unit * p.size * (6.4 + 3.8 * lit);
+      c.globalAlpha = energy * breath;
+      stamp(c, f.glow, q.x, q.y, r);
+      for (const relay of relays) {
+        const age=f.clock-relay.at;
+        const fraction=(p.u-relay.lamp.u)/Math.max(.00001,1-relay.lamp.u);
+        const pass=relay.pickup+fraction*relay.travel;
+        if (p.u<relay.lamp.u || age<pass || relay.quiet) continue;
+        const heat=(1-smooth(.04,.43,age-pass))*(front?1:.62);
+        if (heat>.01) {
+          c.globalAlpha=heat; stamp(c,warmGlow,q.x,q.y,r*1.85);
+          gleam(c,q.x,q.y,r*.86,cream,heat,.21);
+        }
+      }
+      if (i % 6 === 1 && lit > .8 && front) {
+        gleam(c, q.x, q.y, r * .59, cream, energy * .81, .12);
+      }
+    }
+    c.globalAlpha = 1;
+  }
+  function drawLampDust(f,level,front) {
+    const c=f.ctx, q={}, tail={};
+    c.save(); c.globalCompositeOperation="lighter"; c.lineCap="round";
+    for (const p of drops) {
+      const lamp=p.lamp;
+      const lit=smooth(-.008,.065,level-lamp.u);
+      if (lit<.01) continue;
+      const u=(p.phase+f.clock*p.speed)%1, prev=Math.max(0,u-.095);
+      const dx=Math.cos(p.angle)*p.width, dz=Math.sin(p.angle)*p.width;
+      const y=lamp.y-p.drop*u*u;
+      if (y<-.025) continue;
+      project(f,lamp.x+dx*u,y,lamp.z+dz*u,q);
+      if ((q.z>=0)!==front) continue;
+      project(f,lamp.x+dx*prev,lamp.y-p.drop*prev*prev,lamp.z+dz*prev,tail);
+      const strength=lit*smooth(0,.11,u)*(1-smooth(.65,1,u))*(front?.97:.32);
+      c.globalAlpha=strength*.71; c.strokeStyle=honey; c.lineWidth=.78*f.unit;
+      c.beginPath(); c.moveTo(tail.x,tail.y); c.lineTo(q.x,q.y); c.stroke();
+      c.globalAlpha=strength; c.fillStyle=cream;
+      c.fillRect(q.x,q.y,p.size*f.unit,p.size*f.unit);
+      if (p.size>1.10) stamp(c,warmGlow,q.x,q.y,p.size*3.0*f.unit);
+    }
+    c.restore();
+  }
+  function drawBeads(f,level,front) {
+    const c=f.ctx,q={};
+    drawRibbon(f,beadString,Math.min(1,level),front,.66,honey,cream,.57);
+    c.save(); c.globalCompositeOperation = "lighter";
+    for (const bead of beads) {
+      const lit = smooth(-.01,.049,level-bead.u);
+      if (lit<.02) continue;
+      project(f,bead.x,bead.y,bead.z,q);
+      if ((q.z>=0)!==front) continue;
+      const wave = .60+.39*Math.cos(bead.u*TAU*3.1 - f.clock*1.82)**2;
+      c.globalAlpha=lit*wave*(front ? .98 : .27);
+      c.fillStyle=cream;
+      const size=(bead.pendant ? 2.12 : 1.18)*f.unit;
+      c.fillRect(q.x-size/2,q.y-size/2,size,size*(bead.pendant ? 1.32 : 1));
+      if (bead.pendant) {
+        stamp(c,warmGlow,q.x,q.y,size*2.38);
+        if (front && wave>.92) gleam(c,q.x,q.y,size*2.37,cream,lit*.82,.1);
+      }
+    }
+    c.restore();
+  }
+  function drawFireflies(f) {
+    const c=f.ctx, q={};
+    c.save(); c.globalCompositeOperation="lighter";
+    for (const p of flies) {
+      const rise=(p.start+f.clock*p.life)%1;
+      const angle=p.angle+rise*1.27+.14*Math.sin(f.clock*.44+p.phase);
+      const orbit=p.orbit*(1-.34*rise);
+      project(f,Math.cos(angle)*orbit,.025+rise*.91,Math.sin(angle)*orbit,q);
+      c.globalAlpha=smooth(0,.13,rise)*(1-smooth(.76,1,rise))*(.44+.35*Math.sin(rise*9+p.phase)**2);
+      stamp(c,warmGlow,q.x,q.y,p.size*f.unit*7.6);
+    }
+    c.restore();
+  }
+  function drawCrown(f,age,still=false) {
+    if (age<0 || age>4.1) return;
+    const c=f.ctx, tip=project(f,0,.998,0,{}), unit=f.unit;
+    // 先在远景里布置烟花，再用同一镜头投影，升空过程中花球保持比例。
+    const view=still ? 1 : f.r/(f.rest.r*wideZoom);
+    const pivot=f.rest.base+f.rest.r*.15;
+    const wideTip=pivot+(tip.y-pivot)/view;
+    const wideRadius=Math.min(f.rest.r*1.22,f.w*.453);
+    const radius=wideRadius*view;
+    const up=Math.min(wideRadius,Math.max(8,wideTip-f.height*.045)/1.40)*view;
+    const colors=["#ffc66e","#ff8186","#fff3d8","#82e5c4"];
+    c.save(); c.globalCompositeOperation="lighter"; c.lineCap="round";
+    const ignition=(1-smooth(.10,.63,age));
+    if (ignition>.01) {
+      c.globalAlpha=.68*ignition;
+      stamp(c,warmGlow,tip.x,tip.y,radius*(.12+.26*ignition));
+      gleam(c,tip.x,tip.y,radius*.18*ignition,cream,ignition,.14);
+    }
+    for (const shell of shells) {
+      const elapsed=age-shell.delay;
+      if (elapsed<0) continue;
+      const v=clamp(elapsed/shell.ascent,0,1);
+      const head=k=>({x:tip.x+radius*shell.x*k*(.65+.35*k),y:tip.y-up*shell.y*(1-(1-k)**1.46)});
+      const centre=head(1), burst=elapsed-shell.ascent;
+      if (burst<.27) {
+        const q=head(v), fade=1-smooth(0,.27,burst);
+        c.beginPath();
+        for (let i=0;i<=10;i++) {
+          const at=Math.max(0,v-(10-i)*.035), tail=head(at);
+          if (i) c.lineTo(tail.x,tail.y); else c.moveTo(tail.x,tail.y);
+        }
+        c.strokeStyle=honey; c.globalAlpha=.81*fade; c.lineWidth=1.5*unit; c.stroke();
+        c.globalAlpha=fade; stamp(c,warmGlow,q.x,q.y,10*unit);
+      }
+      if (burst<0) continue;
+      const halo=smooth(0,.09,burst)*(1-smooth(.12,.65,burst));
+      if (halo>.01) {
+        c.globalAlpha=.57*halo; stamp(c,warmGlow,centre.x,centre.y,radius*shell.reach*.68);
+        gleam(c,centre.x,centre.y,radius*.082,cream,halo,.77);
+      }
+      const width=radius*shell.reach, height=up*shell.reach;
+      if (shell===shells[0]) drawPearlsAndWillow(f,centre,radius,up,burst);
+      for (const p of shell.sparks) {
+        const t=(burst-p.lag)/p.life;
+        if (t<=0 || t>=1) continue;
+        const alpha=smooth(0,.075,t)*(1-smooth(.62,1,t))*p.near;
+        const shimmer=.78+.22*Math.sin(p.phase+t*18)**2;
+        if (t<.64) {
+          const u=Math.max(0,t-.31*(1-smooth(.30,.64,t))), trail=1-(1-u)**3.18;
+          const v=t*.94, head=1-(1-v)**3.18;
+          c.beginPath();
+          c.moveTo(centre.x+width*(p.dx*trail+p.sway*Math.sin(u*Math.PI)),centre.y+height*p.dy*trail+radius*p.fall*u*u);
+          c.lineTo(centre.x+width*(p.dx*head+p.sway*Math.sin(v*Math.PI)),centre.y+height*p.dy*head+radius*p.fall*v*v);
+          c.strokeStyle=colors[p.color]; c.lineWidth=.62*unit;
+          c.globalAlpha=.35*alpha*(1-smooth(.36,.64,t)); c.stroke();
+        }
+        c.beginPath();
+        let px,py;
+        for (let k=0;k<6;k++) {
+          const u=Math.max(0,t-(5-k)*(.017+.011*t));
+          const flight=1-(1-u)**3.18;
+          px=centre.x+width*(p.dx*flight+p.sway*Math.sin(u*Math.PI));
+          py=centre.y+height*p.dy*flight+radius*p.fall*u*u;
+          if (k) c.lineTo(px,py); else c.moveTo(px,py);
+          if (k===2 && p.size>1.39) {
+            c.globalAlpha=alpha*.43; c.fillStyle=colors[p.color];
+            c.fillRect(px+Math.sin(p.phase)*unit,py+2.2*unit,unit,unit);
+          }
+        }
+        c.strokeStyle=t>.62?honey:colors[p.color];
+        c.lineWidth=(.40+.31*p.size)*unit; c.globalAlpha=alpha*.79*shimmer; c.stroke();
+        c.globalAlpha=alpha*shimmer;
+        stamp(c,fireworkGlow[p.color],px,py,unit*(1.3+p.size*1.95));
+        if (p.size>1.90 && t<.53) gleam(c,px,py,3.6*unit,cream,alpha*.88,p.phase);
+        if (p.split && t>.22 && t<.83) {
+          const fan=(t-.22)/.61, light=Math.sin(Math.PI*fan);
+          for (let b=0;b<3;b++) {
+            const a=p.phase+b*TAU/3, d=width*(.045+.136*fan);
+            const bx=px+Math.cos(a)*d, by=py+Math.sin(a)*d+radius*.12*fan*fan;
+            c.globalAlpha=.84*light; stamp(c,fireworkGlow[b%2?0:2],bx,by,unit*(2.1+p.size));
+          }
+        }
+      }
+    }
+    c.restore();
+  }
+  function drawPearlsAndWillow(f,centre,radius,up,age) {
+    const c=f.ctx, unit=f.unit;
+    // 斜着的一圈星珠从主花里长出来，错开花球的正面轮廓。
+    const t=clamp((age-.07)/1.78,0,1), ring=1-(1-t)**3.65;
+    if (t>0 && t<1) {
+      const shine=smooth(0,.13,t)*(1-smooth(.55,1,t));
+      for (let i=0;i<pearls.length;i++) {
+        const p=pearls[i], a=p.a+.17*t, dx=Math.cos(a), dy=Math.sin(a);
+        const x=centre.x+radius*ring*(dx*.82+dy*.085);
+        const y=centre.y+up*ring*(dy*.31-dx*.20)+radius*p.fall*t*t*.26;
+        const light=shine*(.72+.28*Math.sin(p.phase+f.clock*2.7)**2);
+        c.globalAlpha=light; stamp(c,fireworkGlow[i%5===1?2:0],x,y,unit*(2.5+p.size*1.9));
+        if (i%8===0) gleam(c,x,y,(3.2+p.size)*unit,"#ffdfa3",light,.3);
+      }
+    }
+    // 二次爆点长在主花外缘。每朵只分出少量亮芯，仍能读到中央大花。
+    for (const bud of satellites) {
+      const v=(age-bud.at)/.91;
+      if (v<=0 || v>=1) continue;
+      const x=centre.x+Math.cos(bud.angle)*radius*.65, y=centre.y+Math.sin(bud.angle)*up*.55+radius*.06;
+      const extension=1-(1-v)**3.0, light=smooth(0,.09,v)*(1-smooth(.49,1,v));
+      for (let j=0;j<14;j++) {
+        const angle=bud.angle+j*TAU/14, reach=bud.reach*(j%2?.66:1);
+        const dx=Math.cos(angle)*radius*reach,dy=Math.sin(angle)*up*reach;
+        const px=x+dx*extension, py=y+dy*extension+v*v*up*.085;
+        c.globalAlpha=light*.82; c.strokeStyle=j%3?"#ffcf83":"#fff4d8"; c.lineWidth=.71*unit;
+        c.beginPath(); c.moveTo(px-dx*(1-v)*.31,py-dy*(1-v)*.31); c.lineTo(px,py); c.stroke();
+        stamp(c,fireworkGlow[j%4?0:2],px,py,3.1*unit);
+      }
+    }
+    // 最后一层金柳沿长抛物线下垂，树冠两侧都能看见留下的火星。
+    for (const p of willow) {
+      const v=(age-p.at)/p.life;
+      if (v<=0 || v>=1) continue;
+      const alpha=smooth(0,.16,v)*(1-smooth(.63,1,v));
+      c.beginPath(); let x,y;
+      for (let j=0;j<6;j++) {
+        const k=Math.max(0,v-(5-j)*.043), radial=p.spread*(.65+.31*k);
+        x=centre.x+radius*(Math.cos(p.a)*radial+p.drift*k+.037*Math.sin(p.phase+3.8*k)*k);
+        y=centre.y+up*Math.sin(p.a)*radial*.85+radius*(p.drop*k*k+.15*k);
+        if (j) c.lineTo(x,y); else c.moveTo(x,y);
+        if (j===1 || j===3) {
+          c.globalAlpha=alpha*.50; c.fillStyle="#ffc271"; c.fillRect(x+unit,y,unit,unit);
+        }
+      }
+      c.lineWidth=unit*.77; c.strokeStyle="#f9bb66"; c.globalAlpha=alpha*.73; c.stroke();
+      c.globalAlpha=alpha; stamp(c,warmGlow,x,y,3.5*unit);
+    }
+  }
+  function drawBalls(f, level, front) {
+    const c = f.ctx, q = {};
+    for (const p of balls) {
+      const formed=smooth(-.012,.07,f.growth-p.y);
+      if (formed<.01) continue;
+      project(f, p.x, p.y, p.z, q);
+      if ((q.z >= 0) !== front) continue;
+      const rad = f.r * p.radius * (.90 + .10 * q.z);
+      c.globalAlpha=formed*(front?.94:.47)*(.82+.18*smooth(p.u-.15,p.u+.04,level));
+      c.drawImage(glass[p.kind], q.x - rad * 48 / 34, q.y - rad * 67 / 34, rad * 96 / 34, rad * 114 / 34);
+      const glint = (.5 + .5*Math.sin(f.clock*1.42 + p.u*32)) ** 6;
+      if (front && glint>.43) {
+        gleam(c,q.x-rad*.35,q.y-rad*.48,rad*.68,cream,
+          glint*smooth(-.02,.06,level-p.u),.17);
+      }
+    }
+    c.globalAlpha = 1;
+  }
+  function paintBranches(f, front) {
+    const c = f.ctx, q = {};
+    for (const b of branches) {
+      const formed=smooth(-.015,.09,f.growth-b.y);
+      if (formed<.005) continue;
+      if ((project(f,b.middle.x,b.middle.y,b.middle.z,q).z >= 0) !== front) continue;
+      c.beginPath();
+      for (let i = 0; i < b.edge.length; i++) {
+        const p = b.edge[i]; project(f,p.x,p.y,p.z,q);
+        if (i) c.lineTo(q.x,q.y); else c.moveTo(q.x,q.y);
+      }
+      c.closePath(); c.fillStyle=boughColor[b.tone]; c.globalAlpha=(front?.80:.76)*formed; c.fill();
+    }
+  }
+  function draw(f) {
+    const c = f.ctx, q = {}, tail = {};
+    f.growth=-.12+1.24*smooth(.14,.95,f.shot);
+    const level=-.09+1.20*smooth(.27,.97,f.shot);
+    relays=relays.filter(p=>f.clock-p.at<p.arrival+4.1);
+    drawGround(f);
+    drawFireflies(f);
+    c.globalAlpha=smooth(-.02,.17,f.growth);
+    const trunk = c.createLinearGradient(f.cx - f.r * .05, 0, f.cx + f.r * .05, 0);
+    trunk.addColorStop(0,"#211d17"); trunk.addColorStop(.42,"#634431"); trunk.addColorStop(1,"#30241b");
+    c.fillStyle = trunk; c.beginPath();
+    c.moveTo(f.cx - .048 * f.r, f.base + f.r * .071);
+    c.lineTo(f.cx + .041 * f.r, f.base + f.r * .067); c.lineTo(f.cx + .008 * f.r, f.base-f.h*clamp(f.growth,0,.92));
+    c.closePath(); c.fill();
+    c.globalAlpha=.76; paintBranches(f,false);
+    drawBeads(f,level,false); drawBalls(f,level,false); drawLights(f,level,false); drawLampDust(f,level,false);
+    c.globalAlpha=.80; paintBranches(f,true);
+    for (let i = 0; i < groups.length; i++) {
+      c.beginPath();
+      for (const p of groups[i]) {
+        if (p.y+.043*p.cluster>f.growth) continue;
+        project(f,p.from.x,p.from.y,p.from.z,tail); project(f,p.x,p.y,p.z,q);
+        c.moveTo(tail.x,tail.y); c.lineTo(q.x,q.y);
+        for (const [start,end] of p.sprig) {
+          project(f,start.x,start.y,start.z,tail); project(f,end.x,end.y,end.z,q);
+          c.moveTo(tail.x,tail.y); c.lineTo(q.x,q.y);
+        }
+      }
+      c.strokeStyle = needleColor[i]; c.lineWidth = (.51 + i * .052) * f.unit;
+      c.lineCap="round"; c.globalAlpha=.67+.043*i; c.stroke();
+    }
+    for (let i=0;i<needles.length;i+=4) {
+      const p = needles[i];
+      if (p.y<=f.growth) drawSpeck(f,p,p.x,p.y,p.z,.53);
+    }
+    c.globalAlpha = 1;
+    drawAssembly(f);
+    drawRibbon(f,wire,Math.min(f.growth,1),true,.52,"#c5a371",cream,.34);
+    drawRibbon(f,wire,Math.min(level,1),true,.62,honey,cream,.46);
+    drawBeads(f,level,true); drawBalls(f,level,true); drawLights(f,level,true); drawLampDust(f,level,true);
+    drawComet(f,lightRunner,level,.085,(u,out)=>projectRibbonAt(f,wire,u,out),
+      smooth(0,.07,level)*(1-smooth(.88,1,level))*.88);
+    const star=smooth(.94,1.07,level);
+    project(f,0,.998,0,q);
+    facetedStar(f,q.x,q.y,f.r*.114,f.yaw*.62,star,shades);
+    drawRelays(f);
+    return .42 + .58 * smooth(.55,1,level);
+  }
+  return {
+    seed,inks,draw,backdrop,reset,tap,entrance,reframe,action:"轻点让最近的彩灯沿灯串点亮树顶",
+    camera:{zoom:.80,focus:.35,pan:-.24,lift:-.06,pitch:-.25,direction:-1},
+    cues:[{at:1.05,x:.56,y:.75},{at:6.0,x:.49,y:.30}],
+    sparkColor:champagne,speed:.104,initialAngle:-.06,drift:10,snowCount:68,
+    sky: { base: "#07100e", air: [46, 75, 60], star: [215, 217, 179], stars: .70,
+      rings: [.67, .98, 1.23], spread: .47 }
+  };
+}
+// ── 播放、缩放与触控 ─────────────────────────────────
+function startPlayer() {
+  const stage = document.getElementById("stage");
+  const art = document.getElementById("art");
+  const surface = document.getElementById("surface");
+  const controls = stage.querySelector(".tools");
+  const caption = document.getElementById("greeting");
+  const pauseButton = document.getElementById("pause");
+  const ctx = art.getContext("2d", { alpha: false });
+  if (!ctx) {
+    caption.textContent = "请用支持 Canvas 的浏览器打开。";
+    surface.hidden = true;
+    controls.hidden = true;
+    return;
+  }
+  const accent = readColor(SETTINGS.color);
+  const quantity = Math.round(Number(SETTINGS.particleCount));
+  const count = Number.isFinite(quantity) ? clamp(quantity, 400, 4800) : 2200;
+  const scene = createScene(accent, count);
+  const lowMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const snow = makeSnow(randomFrom(scene.seed + 533), scene.snowCount);
+  const touchSparks = makeTouchSparks(randomFrom(scene.seed + 811), Math.round(55 + count / 32), accent, scene.sparkColor);
+  const passage = makePassage(randomFrom(scene.seed+842),accent,scene.sparkColor);
+  const f = { ctx, snow, ground: makeGround(scene), glow: makeGlow(accent), brushes: scene.clouds ? makeDustBrushes(accent) : null, inks: scene.inks };
+  const openingSeconds = 4.5;
+  // shot 只走一次。环境时钟持续推进，只有按下重播才会排入演示里的点击。
+  let paused = lowMotion.matches;
+  let shot = paused ? 1 : 0, clock = 0, settle = null, pending = [];
+  let demo = null, feedback = [], userTurn = 0, velocity = 0, drag = null;
+  let picture, frameId = 0, previous = null, hideTimer = 0, skipPointerClick = false;
+  surface.setAttribute("aria-label",scene.action+"，左右拖动或按方向键旋转");
+  scene.reset();
+  caption.textContent = String(SETTINGS.greeting ?? "");
+  caption.hidden = !caption.textContent.trim();
+  stage.style.setProperty("--ink", rgb(blend(accent, ivory, .71)));
+  stage.style.setProperty("--haze", rgb(accent, .35));
+
+  function requestFrame() {
+    if (!frameId && !document.hidden) frameId = requestAnimationFrame(tick);
+  }
+  function resize() {
+    const w = stage.clientWidth, height = stage.clientHeight;
+    if (!w || !height) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(4800000 / (w * height)));
+    if (w === f.w && height === f.height && dpr === f.dpr) return;
+    const h = Math.min(height * .637, w * 1.40);
+    const r = Math.min(w * .371, h * .384);
+    Object.assign(f, { w, height, h, r, dpr, cx: w / 2, base: height * .49 + h * .48,
+      unit: clamp(h / 455, .67, 1.63) });
+    f.rest = {cx:f.cx,base:f.base,h,r,unit:f.unit};
+    art.width = Math.round(w * dpr); art.height = Math.round(height * dpr);
+    ctx.setTransform(art.width / w, 0, 0, art.height / height, 0, 0);
+    caption.style.top = Math.min(height - 26, f.base + r * .405 + Math.max(13, height * .022)) + "px";
+    picture = paintSky(f, scene);
+    setCamera();
+    requestFrame();
+  }
+  function setCamera() {
+    const rest=f.rest, lens=scene.camera;
+    const travel=1-smooth(.045,1,shot);
+    const pullback=lens.pullbackEnd ? 1-smooth(.02,lens.pullbackEnd,shot) : travel;
+    const zoom=1+lens.zoom*pullback;
+    f.shot=shot; f.clock=clock; f.quiet=lowMotion.matches || paused;
+    f.autoAngle=scene.initialAngle+clock*scene.speed;
+    f.yaw=userTurn+f.autoAngle+lens.direction*Math.PI*travel;
+    f.cos=Math.cos(f.yaw); f.sin=Math.sin(f.yaw);
+    f.cx=rest.cx+rest.r*(lens.pan*travel+.24*Math.sin(Math.PI*shot));
+    f.base=rest.base+rest.h*((zoom-1)*lens.focus+lens.lift*travel);
+    f.r=rest.r*zoom; f.h=rest.h*zoom; f.unit=rest.unit*(1+.29*(zoom-1));
+    f.parallax=.28*travel; f.pitch=lens.pitch*travel;
+    if (shot===1 && scene.reframe) scene.reframe(f);
+  }
+  function feedbackAt(point) {
+    feedback=feedback.slice(-4);
+    feedback.push({point,at:clock});
+  }
+  function playDemo(dt) {
+    if (!demo || shot<1 || paused) return;
+    demo.time+=dt;
+    while (demo.index<scene.cues.length && demo.time>=scene.cues[demo.index].at) {
+      const point=scene.cues[demo.index++];
+      feedbackAt(point); scene.tap(f,point);
+    }
+    if (demo.index===scene.cues.length) demo=null;
+  }
+  function tick(now) {
+    frameId = 0;
+    if (!picture || document.hidden) { previous = null; return; }
+    const dt = previous === null ? 0 : Math.min(.15, Math.max(0, (now - previous) / 1000));
+    previous = now;
+    const startedAtRest=shot===1;
+    if (!paused) {
+      clock+=dt;
+      if (settle) {
+        settle.age+=dt;
+        shot=mix(settle.from,1,smooth(0,settle.span,settle.age));
+        if (shot===1) settle=null;
+      } else shot=Math.min(1,shot+dt/openingSeconds);
+    }
+    if (!drag && Math.abs(velocity) > .012) {
+      userTurn += velocity * dt;
+      velocity *= Math.exp(-dt * 4.7);
+    } else if (!drag) velocity = 0;
+    setCamera();
+    if (shot===1 && pending.length) {
+      for (const point of pending) scene.tap(f,point);
+      pending=[];
+    }
+    playDemo(startedAtRest ? dt : 0);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(picture, 0, 0, f.w, f.height);
+    const greetingOpacity = scene.draw(f);
+    drawSnow(f, snow, scene);
+    drawPassage(f,passage);
+    if (shot<1) scene.entrance(f);
+    if (scene.overlay) scene.overlay(f);
+    feedback=feedback.filter(hit=>clock-hit.at<1.42);
+    for (const hit of feedback) {
+      if (!lowMotion.matches) drawTouchSparks(f,touchSparks,clock-hit.at,hit.point);
+    }
+    caption.style.opacity=String(clamp(greetingOpacity*smooth(.67,.99,shot),0,1));
+    if (!paused || velocity !== 0) requestFrame();
+    else previous = null;
+  }
+  function updatePauseButton() {
+    pauseButton.dataset.paused = String(paused);
+    const action = paused ? "继续播放" : "暂停动画";
+    pauseButton.setAttribute("aria-label", action); pauseButton.title = action;
+  }
+  function showControls() {
+    stage.classList.add("awake");
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => stage.classList.remove("awake"), 1850);
+  }
+  function interact(x=.5,y=(f.rest.base-f.rest.h*.50)/f.height) {
+    const point={x:clamp(x,0,1),y:clamp(y,0,1)};
+    demo=null; feedbackAt(point);
+    if (shot<1 && !paused) {
+      pending.push(point);
+      if (!settle) settle={from:shot,age:0,span:Math.min(.50,(1-shot)*openingSeconds)};
+    } else {
+      if (paused) { shot=1; settle=null; }
+      setCamera();
+      for (const earlier of pending) scene.tap(f,earlier);
+      pending=[]; scene.tap(f,point);
+    }
+    requestFrame();
+  }
+  pauseButton.addEventListener("click", () => {
+    paused = !paused; previous = null;
+    updatePauseButton(); showControls(); requestFrame();
+  });
+  document.getElementById("replay").addEventListener("click", () => {
+    shot=lowMotion.matches?1:0; clock=0; userTurn=0; velocity=0;
+    pending=[]; feedback=[]; settle=null; demo={time:0,index:0};
+    for (const p of snow) p.frozen=null;
+    scene.reset();
+    paused = false; previous = null;
+    updatePauseButton(); showControls(); requestFrame();
+  });
+  surface.addEventListener("pointerdown", e => {
+    if (e.button !== 0 || !e.isPrimary || drag) return;
+    const area = controls.getBoundingClientRect();
+    const revealOnly = !stage.classList.contains("awake") && e.clientX >= area.left && e.clientX <= area.right &&
+      e.clientY >= area.top && e.clientY <= area.bottom;
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, lastX: e.clientX, lastAt: e.timeStamp,
+      moved: false, speed: 0, revealOnly };
+    velocity = 0;
+    surface.setPointerCapture(e.pointerId);
+  });
+  surface.addEventListener("pointermove", e => {
+    if (!drag || drag.id !== e.pointerId) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) return;
+    drag.moved = true;
+    demo=null;
+    surface.classList.add("is-dragging");
+    const delta = (e.clientX - drag.lastX) / Math.max(80, f.r) * 1.04;
+    const seconds = Math.max(.012, (e.timeStamp - drag.lastAt) / 1000);
+    userTurn += delta;
+    drag.speed = clamp(mix(drag.speed, delta / seconds, .56), -3.25, 3.25);
+    drag.lastX = e.clientX; drag.lastAt = e.timeStamp;
+    requestFrame();
+  });
+  function endDrag(e) {
+    if (!drag || drag.id !== e.pointerId) return;
+    const tap = e.type === "pointerup" && !drag.moved && !drag.revealOnly && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6;
+    skipPointerClick = true;
+    const coast = e.type === "pointerup" && drag.moved && e.timeStamp - drag.lastAt < 90 && !paused && !lowMotion.matches;
+    velocity = coast ? drag.speed : 0;
+    drag = null; surface.classList.remove("is-dragging");
+    if (surface.hasPointerCapture(e.pointerId)) surface.releasePointerCapture(e.pointerId);
+    // 触摸浏览器在拖动后可能省略下一次合成 click。有效轻点在抬手时兑现。
+    if (tap) interact(e.clientX / f.w, e.clientY / f.height);
+    requestFrame();
+  }
+  surface.addEventListener("pointerup", endDrag);
+  surface.addEventListener("pointercancel", endDrag);
+  surface.addEventListener("lostpointercapture", endDrag);
+  stage.addEventListener("pointerdown", () => { skipPointerClick = false; }, true);
+  // 有的触屏会把后续 click 发到刚出现的播放按钮。这次轻点已经在抬手时处理。
+  stage.addEventListener("click", e => {
+    if (!skipPointerClick || e.detail === 0) return;
+    skipPointerClick = false; e.preventDefault(); e.stopPropagation();
+  }, true);
+  surface.addEventListener("click", () => interact());
+  surface.addEventListener("keydown", e => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault(); velocity = 0; demo=null;
+    userTurn += e.key === "ArrowLeft" ? -.19 : .19;
+    requestFrame();
+  });
+  stage.addEventListener("pointermove", showControls);
+  stage.addEventListener("pointerdown", showControls);
+  document.addEventListener("visibilitychange", () => {
+    if (frameId) cancelAnimationFrame(frameId);
+    frameId = 0; previous = null;
+    if (!document.hidden) requestFrame();
+  });
+  lowMotion.addEventListener("change", () => {
+    paused=lowMotion.matches; previous=null; velocity=0;
+    if (paused) {
+      shot=1; settle=null; demo=null; feedback=[];
+      for (const p of snow) p.frozen=null;
+      if (scene.still) scene.still();
+      else scene.reset();
+    }
+    updatePauseButton(); requestFrame();
+  });
+  window.addEventListener("resize", resize);
+  updatePauseButton(); resize();
+}
+startPlayer();
+  </script>
+</body>
+</html>
