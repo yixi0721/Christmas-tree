@@ -92,7 +92,7 @@ function project(f, x, y, z, out) {
   return out;
 }
 const pixel = {};
-function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1) {
+function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1, paint = f) {
   if (opacity <= .008) return;
   const q = project(f, x, y, z, pixel);
   const near = clamp(.72 + q.z * .28, .34, 1.15);
@@ -100,18 +100,18 @@ function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1) {
   const side = Math.max(.70, p.size * f.unit * (.89 + near * .34));
   const c = f.ctx;
   const light = clamp(opacity * p.bright * near * (.83 + .26 * twinkle), 0, 1);
-  if (f.brushes && p.cluster > .18) {
+  if (paint.brushes && p.cluster > .18) {
     c.globalAlpha = Math.min(1, light * (.76 + p.cluster * .24)) * grain;
     const spread = f.unit * (4.7 + 6.9 * p.cluster);
-    stamp(c, f.brushes[p.brush], q.x, q.y, spread);
+    stamp(c, paint.brushes[p.brush], q.x, q.y, spread);
   }
   c.globalAlpha = light;
-  c.fillStyle = f.inks[p.tone];
+  c.fillStyle = paint.inks[p.tone];
   c.fillRect(q.x - side / 2, q.y - side / 2, side, side);
   if (p.gem && twinkle > .75) {
     c.globalAlpha *= .88;
-    stamp(c, f.glow, q.x, q.y, side * (1.65 + twinkle * 2.3));
-    if (p.cluster > .69 && twinkle > .89) gleam(c,q.x,q.y,side * 3.6,f.inks[3],light * twinkle,.15);
+    stamp(c, paint.glow, q.x, q.y, side * (1.65 + twinkle * 2.3));
+    if (p.cluster > .69 && twinkle > .89) gleam(c,q.x,q.y,side * 3.6,paint.inks[3],light * twinkle,.15);
   }
 }
 

@@ -13,15 +13,19 @@ function startPlayer() {
     controls.hidden = true;
     return;
   }
-  const accent = readColor(SETTINGS.color);
+  const treeColor = readColor(SETTINGS.color);
+  const accent = SETTINGS.heartColor ? readColor(SETTINGS.heartColor) : treeColor;
   const quantity = Math.round(Number(SETTINGS.particleCount));
   const count = Number.isFinite(quantity) ? clamp(quantity, 400, 4800) : 2200;
-  const scene = createScene(accent, count);
+  const scene = createScene(accent, count, treeColor);
   const lowMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const snow = makeSnow(randomFrom(scene.seed + 533), scene.snowCount);
   const touchSparks = makeTouchSparks(randomFrom(scene.seed + 811), Math.round(55 + count / 32), accent, scene.sparkColor);
   const passage = makePassage(randomFrom(scene.seed+842),accent,scene.sparkColor);
-  const f = { ctx, snow, ground: makeGround(scene), glow: makeGlow(accent), brushes: scene.clouds ? makeDustBrushes(accent) : null, inks: scene.inks };
+  const paint = scene.paint ?? {
+    glow: makeGlow(accent), brushes: scene.clouds ? makeDustBrushes(accent) : null, inks: scene.inks
+  };
+  const f = { ctx, snow, ground: makeGround(scene), ...paint };
   const openingSeconds = 4.5;
   // shot 只走一次。环境时钟持续推进，只有按下重播才会排入演示里的点击。
   let paused = lowMotion.matches;

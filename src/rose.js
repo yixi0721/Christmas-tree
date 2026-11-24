@@ -43,12 +43,25 @@ function makeMeteorPaint(hue) {
   softLight(mist.getContext("2d"),40,20,40,20,hue,.59);
   return {tail:tile,mist,glow:makeGlow(hue),ink:rgb(hue)};
 }
-function createScene(accent, count) {
+function createScene(accent, count, treeAccent = accent) {
   const seed = 271211, rand = randomFrom(seed);
   const pearl=blend(accent,[250,243,248],.80), gold=blend(accent,[255,222,166],.84);
   const white=blend(pearl,[248,245,246],.58);
-  const inks=[blend(accent,[99,35,81],.54),accent,blend(accent,pearl,.44),pearl,white].map(color=>rgb(color));
-  const pearlBrushes=makeDustBrushes(pearl), pearlGlow=makeGlow(pearl);
+  const treePearl = blend(treeAccent, ivory, .64);
+  const treeTint = rgb(treeAccent), treeCore = rgb(treePearl);
+  // 变形时按每颗粒子的进度选取颜色，笔刷只在场景创建时生成。
+  const materials = [0, .25, .5, .75, 1].map(amount => {
+    const body = blend(accent, treeAccent, amount);
+    const crown = blend(pearl, treePearl, amount);
+    const shadow = blend([99, 35, 81], [113, 81, 43], amount);
+    const tones = [blend(body, shadow, .54), body, blend(body, crown, .44), crown, blend(white, ivory, amount)];
+    const inks = tones.map(tone => rgb(tone));
+    return {
+      body: { inks, brushes: makeDustBrushes(body), glow: makeGlow(body) },
+      crown: { inks, brushes: makeDustBrushes(crown), glow: makeGlow(crown) }
+    };
+  });
+  const pearlGlow = materials[0].crown.glow;
   const lampColor=[255,231,179], lampGlow=makeGlow([255,222,161]);
   const lampInk=rgb(lampColor), lampCore=rgb([255,250,222]);
   const radiusAt = u => Math.pow(1 - u, .86);
@@ -445,9 +458,9 @@ function createScene(accent, count) {
         projectRibbonAt(f,ribbon,u,q);
         const strength=power*(1-lag)**1.5*(.12+.88*smooth(-.26,.38,q.z));
         c.beginPath(); c.moveTo(last.x,last.y); c.lineTo(q.x,q.y);
-        c.strokeStyle=i ? thread : tint; c.lineWidth=(3.0+3.8*(1-lag))*f.unit;
+        c.strokeStyle=i ? thread : treeTint; c.lineWidth=(3.0+3.8*(1-lag))*f.unit;
         c.globalAlpha=strength*.18; c.stroke();
-        c.strokeStyle=core; c.lineWidth=(.53+1.48*(1-lag))*f.unit;
+        c.strokeStyle=treeCore; c.lineWidth=(.53+1.48*(1-lag))*f.unit;
         c.globalAlpha=strength*.78; c.stroke();
         last.x=q.x; last.y=q.y;
       }
@@ -495,15 +508,14 @@ function createScene(accent, count) {
       c.globalAlpha = 1;
     }
     const silk = smooth(.26,.97,tree), flowHead=(f.clock*.096+.14)%1;
-    const pearlView={...f,brushes:pearlBrushes,glow:pearlGlow};
     const gathering=1-smooth(.14,.85,f.shot);
     const burstRadius=Math.min(1.72,f.w*.52/f.r);
-    drawRibbon(f, ribbon, 1, false, 1.5, tint, core, silk);
-    drawRibbon(f, outer, 1, false, .68, thread, core, silk * .45);
+    drawRibbon(f, ribbon, 1, false, 1.5, treeTint, treeCore, silk);
+    drawRibbon(f, outer, 1, false, .68, thread, treeCore, silk * .45);
     const shaping=Boolean(morph) || gathering>0;
     for (const grains of [roseGrains,pearlGrains]) {
-      // 粉尘叠光，雾白细粒用透明度覆盖。密集树梢还能看见单颗粒的边缘。
-      const pale=grains===pearlGrains, view=pale ? pearlView : f;
+      // 主色细尘叠光，高光细粒用透明度覆盖，树梢能看见单颗粒的边缘。
+      const pale = grains === pearlGrains;
       c.globalCompositeOperation=pale ? "source-over" : "lighter";
       for (const p of grains) {
         const hx=(p.hx*hcos-p.hz*hsin)*beat, hz=(p.hx*hsin+p.hz*hcos)*beat;
@@ -523,7 +535,8 @@ function createScene(accent, count) {
         const shimmer=p.ribbonU<0 ? 0 : silk*(1-smooth(0,.077,(flowHead-p.ribbonU+1)%.5));
         const light=((p.edge?1.06:.94)+swirl*.21+shimmer*.31)*(1-(pale?.14:.29)*p.crown*weight);
         const grain=mix(p.edge?.19:.42,pale?.62:.78,weight);
-        drawSpeck(view,p,x,y,z,light,grain+swirl*.28);
+        const material = materials[Math.round(weight * (materials.length - 1))];
+        drawSpeck(f, p, x, y, z, light, grain + swirl * .28, pale ? material.crown : material.body);
         if (p.lamp) project(f,x,y,z,p.lamp);
         if (swirl>.24 && p.gem) {
           project(f,x,y,z,q); c.globalAlpha=swirl*.72;
@@ -536,9 +549,9 @@ function createScene(accent, count) {
     c.globalAlpha = 1;
     c.globalCompositeOperation = "source-over";
     drawLamps(f,tree,1-.91*gathering);
-    drawRibbon(f, ribbon, 1, true, 1.52, tint, core, silk);
-    drawRibbon(f, hem, 1, true, .65, thread, core, silk * .91);
-    drawRibbon(f, outer, 1, true, .68, thread, core, silk * .52);
+    drawRibbon(f, ribbon, 1, true, 1.52, treeTint, treeCore, silk);
+    drawRibbon(f, hem, 1, true, .65, thread, treeCore, silk * .91);
+    drawRibbon(f, outer, 1, true, .68, thread, treeCore, silk * .52);
     drawBurstStreams(f,progress);
     if (heart > .03) {
       for (let i = 0; i < 2; i++) {
@@ -614,10 +627,10 @@ function createScene(accent, count) {
     return 1;
   }
   return {
-    seed, inks, draw, backdrop, reset, still, tap, entrance, action:"轻点切换爱心与圣诞树",
+    seed, paint: materials[0].body, draw, backdrop, reset, still, tap, entrance, action:"轻点切换爱心与圣诞树",
     camera:{zoom:1.10,focus:.49,pan:-.36,lift:.02,pitch:-.22,direction:-1},
     cues:[{at:1.25,x:.47,y:.53},{at:6.90,x:.56,y:.60}],
-    sparkColor:gold,clouds:true,speed:.115,initialAngle:0,drift:4,snowCount:59,
+    sparkColor:gold,speed:.115,initialAngle:0,drift:4,snowCount:59,
     sky: { base: "#100811", air: blend(accent, [63, 16, 53], .74), star: pearl,
       stars: 1.05, rings: [.76, 1.02, 1.27], spread: .19 }
   };

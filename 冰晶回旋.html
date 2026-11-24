@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#050d17">
   <title>冰晶回旋</title>
   <script>
-    // 个性设置 · 改完这三项，保存文件并刷新浏览器即可。
+    // 个性设置 · 修改后保存文件并刷新浏览器即可。
     const SETTINGS = {
       color: "#9CDEFF",         // 主光颜色，使用六位十六进制色值
       particleCount: 3750,        // 树身粒子数，范围 400 到 4800
@@ -174,7 +174,7 @@ function project(f, x, y, z, out) {
   return out;
 }
 const pixel = {};
-function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1) {
+function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1, paint = f) {
   if (opacity <= .008) return;
   const q = project(f, x, y, z, pixel);
   const near = clamp(.72 + q.z * .28, .34, 1.15);
@@ -182,18 +182,18 @@ function drawSpeck(f, p, x, y, z, opacity = 1, grain = 1) {
   const side = Math.max(.70, p.size * f.unit * (.89 + near * .34));
   const c = f.ctx;
   const light = clamp(opacity * p.bright * near * (.83 + .26 * twinkle), 0, 1);
-  if (f.brushes && p.cluster > .18) {
+  if (paint.brushes && p.cluster > .18) {
     c.globalAlpha = Math.min(1, light * (.76 + p.cluster * .24)) * grain;
     const spread = f.unit * (4.7 + 6.9 * p.cluster);
-    stamp(c, f.brushes[p.brush], q.x, q.y, spread);
+    stamp(c, paint.brushes[p.brush], q.x, q.y, spread);
   }
   c.globalAlpha = light;
-  c.fillStyle = f.inks[p.tone];
+  c.fillStyle = paint.inks[p.tone];
   c.fillRect(q.x - side / 2, q.y - side / 2, side, side);
   if (p.gem && twinkle > .75) {
     c.globalAlpha *= .88;
-    stamp(c, f.glow, q.x, q.y, side * (1.65 + twinkle * 2.3));
-    if (p.cluster > .69 && twinkle > .89) gleam(c,q.x,q.y,side * 3.6,f.inks[3],light * twinkle,.15);
+    stamp(c, paint.glow, q.x, q.y, side * (1.65 + twinkle * 2.3));
+    if (p.cluster > .69 && twinkle > .89) gleam(c,q.x,q.y,side * 3.6,paint.inks[3],light * twinkle,.15);
   }
 }
 
@@ -1091,15 +1091,19 @@ function startPlayer() {
     controls.hidden = true;
     return;
   }
-  const accent = readColor(SETTINGS.color);
+  const treeColor = readColor(SETTINGS.color);
+  const accent = SETTINGS.heartColor ? readColor(SETTINGS.heartColor) : treeColor;
   const quantity = Math.round(Number(SETTINGS.particleCount));
   const count = Number.isFinite(quantity) ? clamp(quantity, 400, 4800) : 2200;
-  const scene = createScene(accent, count);
+  const scene = createScene(accent, count, treeColor);
   const lowMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const snow = makeSnow(randomFrom(scene.seed + 533), scene.snowCount);
   const touchSparks = makeTouchSparks(randomFrom(scene.seed + 811), Math.round(55 + count / 32), accent, scene.sparkColor);
   const passage = makePassage(randomFrom(scene.seed+842),accent,scene.sparkColor);
-  const f = { ctx, snow, ground: makeGround(scene), glow: makeGlow(accent), brushes: scene.clouds ? makeDustBrushes(accent) : null, inks: scene.inks };
+  const paint = scene.paint ?? {
+    glow: makeGlow(accent), brushes: scene.clouds ? makeDustBrushes(accent) : null, inks: scene.inks
+  };
+  const f = { ctx, snow, ground: makeGround(scene), ...paint };
   const openingSeconds = 4.5;
   // shot 只走一次。环境时钟持续推进，只有按下重播才会排入演示里的点击。
   let paused = lowMotion.matches;
