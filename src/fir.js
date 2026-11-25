@@ -656,6 +656,7 @@ function createScene(accent, count) {
   }
   return {
     seed,inks,draw,backdrop,reset,tap,entrance,reframe,action:"轻点让最近的彩灯沿灯串点亮树顶",
+    letter:{kind:"fir", name:"小提灯"},
     camera:{zoom:.80,focus:.35,pan:-.24,lift:-.06,pitch:-.25,direction:-1},
     cues:[{at:1.05,x:.56,y:.75},{at:6.0,x:.49,y:.30}],
     sparkColor:champagne,speed:.104,initialAngle:-.06,drift:10,snowCount:68,

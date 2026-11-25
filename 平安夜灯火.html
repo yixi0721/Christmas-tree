@@ -10,7 +10,8 @@
     const SETTINGS = {
       color: "#FFBD69",         // 主光颜色，使用六位十六进制色值
       particleCount: 3950,        // 树身粒子数，范围 400 到 4800
-      greeting: "岁岁平安" // 祝福语，留空即可隐藏
+      greeting: "岁岁平安", // 树下祝福语，留空即可隐藏
+      letter: `` // 信件正文，在两个反引号之间填写，回车和空行都会保留
     };
   </script>
   <style>
@@ -28,21 +29,62 @@
     }
     #surface.is-dragging { cursor: grabbing; }
     #surface:focus-visible { outline: 2px solid var(--ink, ivory); outline-offset: -6px; }
+    #greeting, #letter-reader {
+      color: var(--ink, ivory); font-family: "Baskervville", "Iowan Old Style", "Palatino Linotype",
+        "Songti SC", "Noto Serif CJK SC", SimSun, Georgia, serif;
+    }
     #greeting {
       position: absolute; left: 50%; top: 85%; margin: 0; width: max-content; max-width: 88%;
       transform: translate(-50%, -50%); pointer-events: none; text-align: center;
-      color: var(--ink, ivory); font-family: "Baskervville", "Iowan Old Style", "Palatino Linotype",
-        "Songti SC", "Noto Serif CJK SC", SimSun, Georgia, serif;
       font-size: clamp(1.125rem, 2.8vmin, 1.75rem); font-weight: 400; line-height: 1.5;
       letter-spacing: .13em; overflow-wrap: anywhere; text-wrap: balance;
       text-shadow: 0 0 18px var(--haze, transparent);
     }
+    #letter-charm, #letter-skip {
+      position: absolute; border: 0; padding: 0; background: transparent; cursor: pointer;
+    }
+    #letter-charm { width: 80px; height: 80px; transform: translate(-50%, -50%); border-radius: 50%; }
+    #letter-charm:focus-visible, #letter-skip:focus-visible, #letter-close:focus-visible {
+      outline: 2px solid var(--ink, ivory); outline-offset: 2px;
+    }
+    #letter-reader { position: absolute; inset: 0 0 0 52%; --letter-pad: max(6vw, env(safe-area-inset-right)); }
+    #letter-page {
+      position: absolute; top: 47%; transform: translateY(-50%); width: min(calc(100% - var(--letter-pad)), 32rem);
+      max-height: calc(84% - 44px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+      scrollbar-color: var(--haze) transparent;
+    }
+    #letter-copy {
+      margin: 0; min-height: 1.75em; font-size: clamp(1.125rem, .9rem + .65vw, 1.5rem);
+      line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; text-align: start;
+    }
+    #letter-copy.ends-with-break::after { content: "\200b"; }
+    #letter-close {
+      display: block; margin: 8px 0 0 auto; min-height: 44px; padding: 4px 8px;
+      border: 0; border-radius: 4px; background: transparent; color: var(--ink);
+      font-size: .875rem; letter-spacing: .12em; cursor: pointer;
+    }
+    #letter-close:hover, #letter-close:focus-visible { text-shadow: 0 0 8px var(--ink); }
+    #letter-close:focus-visible { outline-offset: -3px; }
+    #letter-close:active { transform: scale(.96); }
+    #letter-skip { inset: 0; width: 100%; height: 100%; }
+    #letter-skip:focus-visible { outline-offset: -4px; }
+    #letter-close, #letter-envelope { visibility: hidden; }
+    [data-letter="reading"] #letter-close, [data-letter="envelope"] #letter-envelope { visibility: visible; }
+    @media (orientation: portrait) {
+      #letter-reader { left: 38%; --letter-pad: max(18px, env(safe-area-inset-right)); }
+      #letter-copy { font-size: 1.0625rem; }
+    }
     .tools {
       position: absolute; top: max(12px, env(safe-area-inset-top));
       right: max(12px, env(safe-area-inset-right)); display: flex; gap: 4px;
-      opacity: 0; pointer-events: none; transition: opacity 300ms cubic-bezier(.22,1,.36,1);
+      pointer-events: none;
     }
-    main.awake .tools, .tools:has(button:focus-visible) { opacity: 1; pointer-events: auto; }
+    .transport {
+      display: flex; gap: 4px; opacity: 0; pointer-events: none;
+      transition: opacity 300ms cubic-bezier(.22,1,.36,1);
+    }
+    main.awake .transport, .tools:has(button:focus-visible) .transport { opacity: 1; pointer-events: auto; }
+    #letter-envelope { pointer-events: auto; }
     .tools button {
       display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid transparent;
       border-radius: 50%; background: transparent; color: var(--ink, ivory); cursor: pointer;
@@ -63,7 +105,7 @@
     .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
       clip-path: inset(50%); white-space: nowrap; border: 0; }
     noscript { position: absolute; inset: 45% 5% auto; text-align: center; color: white; }
-    @media (prefers-reduced-motion: reduce) { .tools { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .transport { transition: none; } }
   </style>
 </head>
 <body>
@@ -72,9 +114,20 @@
     <canvas id="art" aria-hidden="true"></canvas>
     <button type="button" id="surface" aria-label="与粒子互动"></button>
     <p id="greeting"></p>
+    <button type="button" id="letter-charm" aria-label="打开信件" aria-controls="letter-reader" hidden></button>
+    <section id="letter-reader" aria-label="信件正文" hidden>
+      <div id="letter-page">
+        <p id="letter-copy"></p>
+        <button type="button" id="letter-close">收起</button>
+      </div>
+      <button type="button" id="letter-skip" aria-label="加速显示正文" hidden></button>
+    </section>
     <div class="tools" role="group" aria-label="播放控制">
-      <button type="button" id="replay" aria-label="重播完整演示" title="重播完整演示"><span class="replay-icon" aria-hidden="true"></span></button>
-      <button type="button" id="pause" aria-label="暂停动画" title="暂停动画"><span class="pause-icon" aria-hidden="true"></span></button>
+      <button type="button" id="letter-envelope" aria-label="重新打开信件" aria-controls="letter-reader"></button>
+      <div class="transport">
+        <button type="button" id="replay" aria-label="重播完整演示" title="重播完整演示"><span class="replay-icon" aria-hidden="true"></span></button>
+        <button type="button" id="pause" aria-label="暂停动画" title="暂停动画"><span class="pause-icon" aria-hidden="true"></span></button>
+      </div>
     </div>
     <noscript>请用启用了 JavaScript 的浏览器打开这棵树。</noscript>
   </main>
@@ -1237,12 +1290,390 @@ function createScene(accent, count) {
   }
   return {
     seed,inks,draw,backdrop,reset,tap,entrance,reframe,action:"轻点让最近的彩灯沿灯串点亮树顶",
+    letter:{kind:"fir", name:"小提灯"},
     camera:{zoom:.80,focus:.35,pan:-.24,lift:-.06,pitch:-.25,direction:-1},
     cues:[{at:1.05,x:.56,y:.75},{at:6.0,x:.49,y:.30}],
     sparkColor:champagne,speed:.104,initialAngle:-.06,drift:10,snowCount:68,
     sky: { base: "#07100e", air: [46, 75, 60], star: [215, 217, 179], stars: .70,
       rings: [.67, .98, 1.23], spread: .47 }
   };
+}
+// 主题物件、旋风和信封共用这一组笔刷。所有运动都取播放器的时钟。
+function makeCharmHalo(accent, light) {
+  const tile = document.createElement("canvas");
+  tile.width = tile.height = 160;
+  const c = tile.getContext("2d");
+  // 光集中在物件轮廓外，冰晶落在亮枝旁时也能看清六个尖角。
+  const haze = c.createRadialGradient(80, 80, 0, 80, 80, 80);
+  haze.addColorStop(0, rgb(blend(accent, [16, 18, 28], .74), .72));
+  haze.addColorStop(.35, rgb(accent, .30));
+  haze.addColorStop(.58, rgb(accent, .50));
+  haze.addColorStop(.77, rgb(accent, .24));
+  haze.addColorStop(1, rgb(accent, 0));
+  c.fillStyle = haze; c.fillRect(0, 0, 160, 160);
+  const rim = c.createLinearGradient(27, 117, 133, 43);
+  rim.addColorStop(0, rgb(light, .78));
+  rim.addColorStop(.45, rgb(accent, .14));
+  rim.addColorStop(1, rgb(light, .92));
+  c.strokeStyle = rim; c.lineWidth = 1.8;
+  c.beginPath(); c.arc(80, 80, 62, 0, TAU); c.stroke();
+  gleam(c, 131, 45, 8, rgb(light), .98, .16);
+  gleam(c, 29, 115, 5.6, rgb(light), .78, .16);
+  return tile;
+}
+
+function makeLetterArt(theme, accent, seed) {
+  const ice = theme.kind === "ice", rose = theme.kind === "rose";
+  const light = blend(accent, ivory, .79), core = rgb(light);
+  const inks = [rgb(accent), rgb(blend(accent, ivory, .38)), core];
+  const glow = makeGlow(accent), charmHalo = makeCharmHalo(accent, light), random = randomFrom(seed + 1201);
+  const grains = Array.from({length: 94}, (_, i) => ({
+    angle: random() * TAU, orbit: .20 + .80 * Math.sqrt(random()), layer: random() - .5,
+    speed: 2.5 + random() * 1.6, size: .55 + random() ** 2 * 1.35,
+    tone: i % 3, large: i % 6 === 0
+  }));
+  const object = document.createElement("canvas");
+  object.width = object.height = 150;
+  const pen = object.getContext("2d");
+  pen.translate(75, 75); pen.scale(2.5, 2.5);
+  pen.lineJoin = pen.lineCap = "round";
+  function paint(outline, fill, edge, width = .9) {
+    const path = new Path2D(outline);
+    if (fill) { pen.fillStyle = fill; pen.fill(path); }
+    if (edge) { pen.strokeStyle = edge; pen.lineWidth = width; pen.stroke(path); }
+  }
+  if (rose) {
+    const petal = pen.createLinearGradient(-10, -14, 8, 6);
+    petal.addColorStop(0, core); petal.addColorStop(.32, rgb(blend(accent, ivory, .30)));
+    petal.addColorStop(.72, rgb(accent)); petal.addColorStop(1, rgb(blend(accent, [62, 10, 35], .66)));
+    const leaf = "#799586", leafEdge = "#bbcead";
+    paint("M-6 23 Q3 12 1 0", null, leafEdge, 1.55);
+    paint("M-2 15 Q-12 17 -15 6 Q-5 7 -2 15 M0 11 Q5 1 13 4 Q9 12 0 11", leaf, leafEdge, .5);
+    paint("M-10 -13 Q-6 -22 1 -17 Q9 -20 11 -12 Q12 -2 2 5 Q-10 4 -10 -13Z", petal, core);
+    paint("M-9 -14 Q-2 -11 4 -4 Q3 1 1 4 Q-10 0 -9 -14Z", petal, core, .7);
+    paint("M10 -14 Q4 -13 -2 -6 Q-3 -2 1 3 Q10 0 10 -14Z", petal, core, .75);
+    paint("M-6 -15 Q0 -20 5 -14 Q1 -15 -2 -12", null, core, 1.1);
+    paint("M-7 0 Q-3 3 1 2 L6 0 Q4 7 0 6Z", leaf, leafEdge, .55);
+  } else if (ice) {
+    stamp(pen, theme.tile, 0, 0, 24);
+    for (let arm = 0; arm < 6; arm++) {
+      pen.save(); pen.rotate(arm * TAU / 6);
+      paint("M0 -20 L2.6 -10 L0 -5 L-2.6 -10Z", rgb(accent), core, .6);
+      paint("M0 -19 L0 -6 L-2.1 -10Z", rgb(light));
+      pen.restore();
+    }
+    paint("M0 -5 L4 0 L0 5 L-4 0Z", rgb(accent), core);
+    paint("M0 -5 L0 3 L-3 0Z", core);
+  } else {
+    const metal = rgb(blend(accent, [82, 47, 28], .52));
+    const glass = pen.createLinearGradient(0, -8, 0, 13);
+    glass.addColorStop(0, rgb(accent, .35)); glass.addColorStop(.52, rgb(light, .95));
+    glass.addColorStop(1, rgb(accent, .66));
+    paint("M-5 -15 C-8 -27 8 -27 5 -15", null, core, 1.4);
+    paint("M-11 -9 L-7 -13 L-4 -14 L-4 -17 L4 -17 L4 -14 L8 -13 L11 -9Z", metal, core);
+    paint("M-9 -7 L9 -7 L7 12 L-6 12Z", glass, core, 1);
+    paint("M-1 9 C-5 5 0 1 1 -3 Q1 2 3 4 Q6 9 -1 9Z", "#fff6d4");
+    paint("M-9 -7 L-5 12 M9 -7 L5 12 M-10 12 L9 12 L7 16 L-7 16Z", metal, core, 1.15);
+    paint("M-5 17 Q0 22 5 17", null, rgb(accent), 1.25);
+  }
+
+  function charm(c, at, time, alpha = 1) {
+    if (alpha <= 0) return;
+    const breath = .5 + .5 * Math.sin(time * 1.6);
+    c.save(); c.translate(at.x, at.y);
+    c.globalAlpha = alpha * (.76 + .24 * breath);
+    stamp(c, charmHalo, 0, 0, at.radius * (.88 + .12 * breath));
+    c.globalAlpha = alpha;
+    c.rotate(ice ? time * .20 : (rose ? -.22 : -.10) + .06 * Math.sin(time * 1.5));
+    const scale = 1.17 + .035 * breath;
+    c.scale(scale, scale);
+    if (rose) {
+      const bloom = breath * .14 + (1 - alpha);
+      for (const side of [-1, 1]) {
+        c.save(); c.translate(side * (5 + 6 * bloom), -9 - 3 * bloom);
+        c.rotate(side * (.30 + .85 * bloom)); c.scale(side * .75, 1);
+        stamp(c, theme.tile, 0, 0, 8); c.restore();
+      }
+    }
+    stamp(c, object, 0, 0, 29);
+    c.restore();
+  }
+
+  function wind(c, at, width, height, tilt, time, direction, alpha) {
+    if (alpha <= .001) return;
+    c.save(); c.translate(at.x, at.y); c.globalCompositeOperation = "lighter";
+    const turn = time * direction;
+    // 两束很细的弧光把分散的颗粒连成绕流，前低后高的前缘掠过字位。
+    for (let strand = 0; strand < 2; strand++) {
+      c.beginPath();
+      for (let i = 0; i <= 28; i++) {
+        const a = turn * 3 + strand * Math.PI + i * .115;
+        const x = Math.cos(a) * width * (.61 + .16 * strand);
+        const y = Math.sin(a) * height * .63 - tilt * x / Math.max(width, 1);
+        if (i) c.lineTo(x, y); else c.moveTo(x, y);
+      }
+      c.strokeStyle = inks[strand]; c.globalAlpha = alpha * .23; c.lineWidth = .72; c.stroke();
+    }
+    for (const p of grains) {
+      const a = p.angle + turn * p.speed, depth = Math.sin(a);
+      const x = Math.cos(a) * width * p.orbit;
+      const y = (depth * p.orbit * .75 + p.layer * .72) * height - tilt * x / Math.max(width, 1);
+      c.globalAlpha = alpha * (.60 + .29 * depth);
+      if (p.large && theme.tile) {
+        const r = (rose ? 4.3 : 3.3) + p.size * 1.8;
+        c.save(); c.translate(x, y); c.rotate(a * .88);
+        c.scale(.38 + .62 * Math.abs(Math.cos(a * .91)), 1);
+        stamp(c, theme.tile, 0, 0, r); c.restore();
+      } else if (!theme.tile && p.large) {
+        c.strokeStyle = inks[1]; c.lineWidth = p.size;
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x + depth * 5, y - Math.cos(a) * 3); c.stroke();
+        stamp(c, glow, x, y, 5);
+      } else {
+        c.fillStyle = inks[p.tone]; c.fillRect(x, y, p.size, ice ? p.size * 1.6 : p.size);
+      }
+    }
+    c.restore();
+  }
+
+  // 字形上的采样点就是细粒最后的落点。倒放同一段运动时，它们从笔画脱离。
+  function strokes(c, glyph, origin, progress, time) {
+    const loose = 1 - progress, envelope = Math.sin(progress * Math.PI);
+    c.globalAlpha = envelope * .96;
+    for (let i = 0; i < glyph.dots.length; i++) {
+      const dot = glyph.dots[i], phase = i * 2.4 + glyph.x * .14 + time * 6;
+      const x = origin.x + glyph.x + dot.x + loose * (Math.cos(phase) * 12 - 4);
+      const y = origin.y + glyph.y + dot.y + loose * (Math.sin(phase) * 5 - 8);
+      c.fillStyle = inks[i % 3];
+      c.fillRect(x, y, ice ? .9 : 1.25, ice ? 2 : 1.25);
+    }
+  }
+
+  const tl = [-10,-7], tr = [10,-7], br = [10,7], bl = [-10,7], fold = [0,1];
+  function trace(c, points, progress) {
+    const head = clamp(progress, 0, 1) * (points.length - 1);
+    let [x, y] = points[0];
+    c.beginPath(); c.moveTo(x, y);
+    for (let i = 1; i < points.length && i - 1 < head; i++) {
+      const step = Math.min(1, head - i + 1);
+      x = mix(points[i - 1][0], points[i][0], step);
+      y = mix(points[i - 1][1], points[i][1], step);
+      c.lineTo(x, y);
+    }
+    c.stroke();
+    return {x, y};
+  }
+  function envelope(c, at, progress) {
+    if (progress <= 0) return;
+    c.save(); c.translate(at.x, at.y); c.lineWidth = 1.35; c.lineJoin = c.lineCap = "round";
+    c.globalAlpha = .17 * progress; stamp(c, glow, 0, 0, 16);
+    c.globalAlpha = .91; c.strokeStyle = core;
+    const frame = smooth(0, .66, progress), flap = smooth(ice || rose ? .55 : .66, 1, progress);
+    if (ice) {
+      const corners = [tl, tr, br, bl];
+      corners.forEach((corner, i) => {
+        if (frame < 1) stamp(c, glow, corner[0], corner[1], 3.2);
+        trace(c, [corner, corners[(i + 1) % 4]], frame);
+      });
+    } else {
+      const lead = trace(c, [tl,tr,br,bl,tl], frame);
+      if (!rose && frame < 1) stamp(c, glow, lead.x, lead.y, 4);
+    }
+    const left = trace(c, [tl, fold], flap), right = trace(c, [tr, fold], flap);
+    if (rose && flap > 0 && flap < 1) {
+      stamp(c, theme.tile, left.x, left.y, 3.3); stamp(c, theme.tile, right.x, right.y, 3.3);
+    } else if (!ice && !rose && flap > 0) {
+      stamp(c, glow, left.x, left.y, 2 + 3 * Math.sin(Math.PI * flap));
+    }
+    c.restore();
+  }
+  return {charm, wind, strokes, envelope};
+}
+// 信件的五个状态共享播放器时钟。正文由浏览器排版，Canvas 只绘制物件和飞行中的粒子。
+function makeLetter(stage, scene, accent, text, lowMotion, onOpen, requestFrame) {
+  const charm = stage.querySelector("#letter-charm"), envelope = stage.querySelector("#letter-envelope");
+  const reader = stage.querySelector("#letter-reader"), page = stage.querySelector("#letter-page");
+  const copy = stage.querySelector("#letter-copy"), skip = stage.querySelector("#letter-skip");
+  const close = stage.querySelector("#letter-close");
+  const art = makeLetterArt(scene.letter, accent, scene.seed);
+  const flight = .56, writing = 2, openTime = flight + writing;
+  const gather = .80, returnFlight = .56, seal = .42, closeTime = gather + returnFlight + seal;
+  let state = "charm", age = 0, speed = 1, fromEnvelope = false, focusInFlight = false;
+  let charmAt, envelopeAt, layout;
+  charm.setAttribute("aria-label", "打开信件，" + scene.letter.name);
+
+  // 空白用原文本节点保存，字素各占一个行内元素，保留系统字体的折行和标点规则。
+  const content = String(text ?? "").replace(/\r\n?/g, "\n");
+  // 让浏览器也排出最后一次回车后的空白行，正文文本本身保持原样。
+  copy.classList.toggle("ends-with-break", content.endsWith("\n"));
+  const parts = typeof Intl.Segmenter === "function"
+    ? Array.from(new Intl.Segmenter("zh", {granularity:"grapheme"}).segment(content), part => part.segment)
+    : Array.from(content);
+  const glyphs = [], fragment = document.createDocumentFragment();
+  for (const part of parts) {
+    if (/^\s+$/u.test(part)) { fragment.append(part); continue; }
+    const span = document.createElement("span");
+    span.textContent = part; fragment.append(span);
+    glyphs.push({span, part, opacity: 1});
+  }
+  copy.append(fragment);
+
+  function change(next) {
+    const active = document.activeElement;
+    const carryFocus = [charm, envelope, skip, close].includes(active) || (focusInFlight && active === document.body);
+    state = next; age = 0; speed = 1;
+    stage.dataset.letter = state;
+    charm.hidden = state !== "charm";
+    reader.hidden = state === "charm" || state === "envelope";
+    skip.hidden = state !== "opening";
+    copy.setAttribute("aria-hidden", String(state !== "reading"));
+    if (state === "reading") {
+      for (const glyph of glyphs) setInk(glyph, 1);
+    }
+    const target = {charm, envelope, opening:skip, reading:close}[state];
+    focusInFlight = carryFocus && !target;
+    if (carryFocus && target) target.focus({preventScroll:true});
+  }
+  function setInk(glyph, value) {
+    if (glyph.opacity === value) return;
+    glyph.opacity = value;
+    glyph.span.style.opacity = value === 1 ? "" : String(value);
+  }
+
+  function measure() {
+    if (reader.hidden) return;
+    const body = copy.getBoundingClientRect(), clip = page.getBoundingClientRect();
+    const style = getComputedStyle(copy), size = parseFloat(style.fontSize);
+    const line = parseFloat(style.lineHeight), masks = new Map();
+    const sampler = document.createElement("canvas").getContext("2d", {willReadFrequently:true});
+    // 只在排版变化时取样。每个字的实心笔画提供若干落点，重复字形共用一份。
+    function sample(part, width, height) {
+      const key = part + ":" + width + ":" + height;
+      if (masks.has(key)) return masks.get(key);
+      sampler.canvas.width = width; sampler.canvas.height = height;
+      sampler.font = style.fontWeight + " " + style.fontSize + " " + style.fontFamily;
+      const metrics = sampler.measureText(part);
+      const ascent = metrics.fontBoundingBoxAscent ?? size * .82;
+      const descent = metrics.fontBoundingBoxDescent ?? size * .18;
+      sampler.fillText(part, 0, (height + ascent - descent) / 2);
+      const rgba = sampler.getImageData(0, 0, width, height).data, pixels = [];
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          if (rgba[(y * width + x) * 4 + 3] > 80) pixels.push({x, y});
+        }
+      }
+      const count = Math.min(14, pixels.length);
+      const dots = Array.from({length:count}, (_, i) => pixels[Math.floor((i + .5) * pixels.length / count)]);
+      masks.set(key, dots);
+      return dots;
+    }
+    let inkWidth = 0;
+    for (const glyph of glyphs) {
+      const box = glyph.span.getBoundingClientRect();
+      glyph.x = box.left - body.left; glyph.y = box.top - body.top;
+      glyph.cx = glyph.x + box.width / 2; glyph.cy = glyph.y + box.height / 2;
+      glyph.dots = sample(glyph.part, Math.max(1, Math.ceil(box.width)), Math.max(1, Math.ceil(box.height)));
+      inkWidth = Math.max(inkWidth, glyph.x + box.width);
+    }
+    const width = Math.min(body.width, Math.max(inkWidth, size * 2.5));
+    let first = Infinity, last = -Infinity;
+    for (const glyph of glyphs) {
+      glyph.crossing = glyph.cy + (glyph.cx / width - .5) * line * .80;
+      first = Math.min(first, glyph.crossing); last = Math.max(last, glyph.crossing);
+    }
+    // 按首字和末字定时，段首或末尾的空行只影响排版。
+    const start = glyphs.length ? first - line * .36 : -line * .65;
+    const end = glyphs.length ? last + line * .36 : body.height + line * .65;
+    layout = {x:body.left, y:body.top + page.scrollTop, width, line, clip, start, end};
+  }
+  function resize(home, w, height) {
+    const radius = parseFloat(getComputedStyle(charm).width) / 2;
+    charmAt = {x:Math.min(w - radius - 4, home.cx + home.r * 1.06),
+      y:Math.min(height - radius - 4, home.base + home.r * .08), radius};
+    charm.style.left = charmAt.x + "px"; charm.style.top = charmAt.y + "px";
+    const box = envelope.getBoundingClientRect();
+    envelopeAt = {x:box.left + box.width / 2, y:box.top + box.height / 2};
+    measure();
+  }
+  function open() {
+    if (state !== "charm" && state !== "envelope") return;
+    fromEnvelope = state === "envelope";
+    const origin = fromEnvelope ? envelopeAt : charmAt;
+    onOpen(origin);
+    change("opening"); page.scrollTop = 0; measure();
+    for (const glyph of glyphs) setInk(glyph, 0);
+    if (lowMotion.matches) change("reading");
+    requestFrame();
+  }
+  function fold() {
+    if (state !== "reading") return;
+    change(lowMotion.matches ? "envelope" : "closing");
+    requestFrame();
+  }
+  function advance(dt) {
+    if (state !== "opening" && state !== "closing") return;
+    age += dt * speed;
+    if (state === "opening" && (age >= openTime || lowMotion.matches)) change("reading");
+    if (state === "closing" && (age >= closeTime || lowMotion.matches)) change("envelope");
+  }
+  function view() {
+    if (state === "opening") return smooth(0, .85, age);
+    if (state === "closing") return 1 - smooth(0, gather + returnFlight, age);
+    return state === "reading" ? 1 : 0;
+  }
+  function draw(f) {
+    const c = f.ctx;
+    c.save(); c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+    if (state === "charm") art.charm(c, charmAt, lowMotion.matches ? 0 : f.clock);
+    else if (state === "envelope") art.envelope(c, envelopeAt, 1);
+    else if (state !== "reading" && layout) drawMotion(c, f.clock);
+    c.restore();
+  }
+  function drawMotion(c, time) {
+    const opening = state === "opening";
+    const {line, width, clip, start, end} = layout;
+    const origin = {x:layout.x, y:layout.y - page.scrollTop};
+    const t = opening ? clamp((age - flight) / writing, 0, 1) : 1 - clamp(age / gather, 0, 1);
+    const front = mix(start, end, t);
+    const head = {x:origin.x + width / 2, y:origin.y + front};
+    const tilt = line * .40;
+    // 实字只在几粒星尘已经碰到笔画时显现。反向收起时，同一批笔画先松开。
+    c.save(); c.beginPath(); c.rect(clip.left, clip.top, clip.width, clip.height); c.clip();
+    for (const glyph of glyphs) {
+      const p = clamp((front - glyph.crossing) / (line * .72) + .5, 0, 1);
+      setInk(glyph, smooth(.48, .96, p));
+      if (p > 0 && p < 1) art.strokes(c, glyph, origin, p, time);
+    }
+    c.restore();
+    const fullWidth = Math.max(17, width * .51), band = line * .48;
+    if (opening && age < flight) {
+      const at = fromEnvelope ? envelopeAt : charmAt;
+      const travel = smooth(0, flight, age), arc = Math.sin(travel * Math.PI);
+      const point = {x:mix(at.x, head.x, travel) + arc * (fromEnvelope ? -23 : 23),
+        y:mix(at.y, head.y, travel) - arc * 36};
+      if (fromEnvelope) art.envelope(c, at, 1 - smooth(0, .23, age));
+      else art.charm(c, at, time, 1 - smooth(0, .22, age));
+      art.wind(c, point, mix(9, fullWidth, travel), mix(8, band, travel), tilt * travel,
+        time, 1, smooth(0, .13, age));
+    } else if (!opening && age >= gather) {
+      const travel = smooth(gather, gather + returnFlight, age), arc = Math.sin(travel * Math.PI);
+      const point = {x:mix(head.x, envelopeAt.x, travel) + arc * 24,
+        y:mix(Math.max(clip.top - line, head.y), envelopeAt.y, travel) - arc * 30};
+      const shape = smooth(gather + returnFlight * .70, closeTime, age);
+      art.wind(c, point, mix(fullWidth, 6, travel), mix(band, 3, travel), tilt * (1 - travel),
+        time, -1, 1 - smooth(.05, .86, shape));
+      art.envelope(c, envelopeAt, shape);
+    } else {
+      art.wind(c, head, fullWidth, band, tilt, time, opening ? 1 : -1,
+        opening ? 1 - smooth(.89, 1, t) : 1 - smooth(.93, 1, t));
+    }
+  }
+  charm.addEventListener("click", open);
+  envelope.addEventListener("click", open);
+  close.addEventListener("click", fold);
+  skip.addEventListener("click", () => { speed = Math.max(speed, (openTime - age) / .48); requestFrame(); });
+  change("charm");
+  return {advance, draw, resize, view, reset:() => change("charm"),
+    get active() { return state !== "charm" && state !== "envelope"; }};
 }
 // ── 播放、缩放与触控 ─────────────────────────────────
 function startPlayer() {
@@ -1278,6 +1709,7 @@ function startPlayer() {
   let shot = paused ? 1 : 0, clock = 0, settle = null, pending = [];
   let demo = null, feedback = [], userTurn = 0, velocity = 0, drag = null;
   let picture, frameId = 0, previous = null, hideTimer = 0, skipPointerClick = false;
+  const letter = makeLetter(stage, scene, accent, SETTINGS.letter, lowMotion, openLetter, requestFrame);
   surface.setAttribute("aria-label",scene.action+"，左右拖动或按方向键旋转");
   scene.reset();
   caption.textContent = String(SETTINGS.greeting ?? "");
@@ -1297,16 +1729,25 @@ function startPlayer() {
     const r = Math.min(w * .371, h * .384);
     Object.assign(f, { w, height, h, r, dpr, cx: w / 2, base: height * .49 + h * .48,
       unit: clamp(h / 455, .67, 1.63) });
-    f.rest = {cx:f.cx,base:f.base,h,r,unit:f.unit};
+    f.home = {cx:f.cx,base:f.base,h,r,unit:f.unit};
+    f.rest = {...f.home};
     art.width = Math.round(w * dpr); art.height = Math.round(height * dpr);
     ctx.setTransform(art.width / w, 0, 0, art.height / height, 0, 0);
     caption.style.top = Math.min(height - 26, f.base + r * .405 + Math.max(13, height * .022)) + "px";
     picture = paintSky(f, scene);
+    letter.resize(f.home, w, height);
     setCamera();
     requestFrame();
   }
   function setCamera() {
-    const rest=f.rest, lens=scene.camera;
+    const {rest,home}=f, lens=scene.camera;
+    const view=letter.view(), portrait=f.height>=f.w;
+    const readingScale=portrait ? Math.min(1,f.w*.148/home.r) : Math.min(.92,f.w*.184/home.r);
+    const scale=mix(1,readingScale,view);
+    rest.cx=mix(home.cx,f.w*(portrait ? .18 : .275),view);
+    const readingBase=portrait ? f.height*.705 : f.height*.50+home.h*readingScale*.49;
+    rest.base=mix(home.base,readingBase,view);
+    rest.h=home.h*scale; rest.r=home.r*scale; rest.unit=home.unit*scale;
     const travel=1-smooth(.045,1,shot);
     const pullback=lens.pullbackEnd ? 1-smooth(.02,lens.pullbackEnd,shot) : travel;
     const zoom=1+lens.zoom*pullback;
@@ -1319,6 +1760,13 @@ function startPlayer() {
     f.r=rest.r*zoom; f.h=rest.h*zoom; f.unit=rest.unit*(1+.29*(zoom-1));
     f.parallax=.28*travel; f.pitch=lens.pitch*travel;
     if (shot===1 && scene.reframe) scene.reframe(f);
+  }
+  function openLetter(origin) {
+    demo=null; pending=[]; velocity=0;
+    if (shot<1) settle={from:shot,age:0,span:Math.min(.5,(1-shot)*openingSeconds)};
+    setCamera();
+    if (scene.letter.onOpen) scene.letter.onOpen({...f,quiet:lowMotion.matches},
+      {x:origin.x/f.w,y:origin.y/f.height});
   }
   function feedbackAt(point) {
     feedback=feedback.slice(-4);
@@ -1347,10 +1795,11 @@ function startPlayer() {
         if (shot===1) settle=null;
       } else shot=Math.min(1,shot+dt/openingSeconds);
     }
-    if (!drag && Math.abs(velocity) > .012) {
+    if (!paused && !drag && Math.abs(velocity) > .012) {
       userTurn += velocity * dt;
       velocity *= Math.exp(-dt * 4.7);
     } else if (!drag) velocity = 0;
+    letter.advance(paused ? 0 : dt);
     setCamera();
     if (shot===1 && pending.length) {
       for (const point of pending) scene.tap(f,point);
@@ -1368,7 +1817,10 @@ function startPlayer() {
     for (const hit of feedback) {
       if (!lowMotion.matches) drawTouchSparks(f,touchSparks,clock-hit.at,hit.point);
     }
-    caption.style.opacity=String(clamp(greetingOpacity*smooth(.67,.99,shot),0,1));
+    letter.draw(f);
+    const captionAlpha=f.height>=f.w ? 1-letter.view() : 1;
+    caption.style.opacity=String(clamp(greetingOpacity*smooth(.67,.99,shot)*captionAlpha,0,1));
+    caption.style.translate=(f.rest.cx-f.home.cx)+"px "+(f.rest.base-f.home.base+(f.rest.r-f.home.r)*.405)+"px";
     if (!paused || velocity !== 0) requestFrame();
     else previous = null;
   }
@@ -1383,6 +1835,8 @@ function startPlayer() {
     hideTimer = setTimeout(() => stage.classList.remove("awake"), 1850);
   }
   function interact(x=.5,y=(f.rest.base-f.rest.h*.50)/f.height) {
+    // 读信期间玫瑰款保持树形，收起后再轻点即可切回爱心。
+    if (letter.active && scene.letter.kind==="rose") return;
     const point={x:clamp(x,0,1),y:clamp(y,0,1)};
     demo=null; feedbackAt(point);
     if (shot<1 && !paused) {
@@ -1398,19 +1852,20 @@ function startPlayer() {
   }
   pauseButton.addEventListener("click", () => {
     paused = !paused; previous = null;
+    if (paused) velocity=0;
     updatePauseButton(); showControls(); requestFrame();
   });
   document.getElementById("replay").addEventListener("click", () => {
     shot=lowMotion.matches?1:0; clock=0; userTurn=0; velocity=0;
     pending=[]; feedback=[]; settle=null; demo={time:0,index:0};
     for (const p of snow) p.frozen=null;
-    scene.reset();
+    scene.reset(); letter.reset();
     paused = false; previous = null;
     updatePauseButton(); showControls(); requestFrame();
   });
   surface.addEventListener("pointerdown", e => {
     if (e.button !== 0 || !e.isPrimary || drag) return;
-    const area = controls.getBoundingClientRect();
+    const area = controls.querySelector(".transport").getBoundingClientRect();
     const revealOnly = !stage.classList.contains("awake") && e.clientX >= area.left && e.clientX <= area.right &&
       e.clientY >= area.top && e.clientY <= area.bottom;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, lastX: e.clientX, lastAt: e.timeStamp,

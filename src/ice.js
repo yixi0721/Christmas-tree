@@ -257,15 +257,16 @@ function createScene(accent, count) {
   function drawSky(f, opened) {
     const c = f.ctx;
     const far=1-smooth(.12,.92,f.shot), crest=Math.sin(Math.PI*smooth(.78,1,f.shot));
-    const width=Math.max(f.w*1.06,f.rest.r*3.73)*(1+.11*far);
-    const height=Math.min(f.rest.h*.70,width*.45);
+    const sky=f.home;
+    const width=Math.max(f.w*1.06,sky.r*3.73)*(1+.11*far);
+    const height=Math.min(sky.h*.70,width*.45);
     c.save(); c.globalCompositeOperation = "lighter";
     for (let i=0;i<auroras.length;i++) {
       const drift = Math.sin(f.clock*(i ? .24 : .17) + i*2.4);
       const breathe = 1 + .034*Math.sin(f.clock*.19+i);
       c.globalAlpha=(.24+.35*opened+.18*crest)*(i?.89:1);
-      const left=f.rest.cx-width*(.50+.064*drift)+f.rest.r*.075*far;
-      const top=f.rest.base-f.rest.h*(1.25-i*.012-.25*far)+drift*f.rest.unit*7;
+      const left=sky.cx-width*(.50+.064*drift)+sky.r*.075*far;
+      const top=sky.base-sky.h*(1.25-i*.012-.25*far)+drift*sky.unit*7;
       c.drawImage(auroras[i],left,top,
         width,height*breathe);
     }
@@ -488,6 +489,7 @@ function createScene(accent, count) {
   }
   return {
     seed,inks,draw,reset,tap,overlay,entrance,action:"轻点在指尖结出六枝冰花",
+    letter:{kind:"ice", name:"六瓣冰晶", tile:makeCrystal(frost,1)},
     camera:{zoom:.65,pullbackEnd:.36,focus:.19,pan:-.20,lift:-.105,pitch:.070,direction:winding},
     cues:[{at:1.18,x:.65,y:.53},{at:5.40,x:.39,y:.58}],
     sparkColor:mint,clouds:true,speed:-winding*.137,initialAngle:.08,drift:8.5,snowCount:74,

@@ -401,11 +401,11 @@ function createScene(accent, count, treeAccent = accent) {
       closest=Math.min(closest,p.delay); farthest=Math.max(farthest,p.delay);
     }
     for (const p of dust) p.delay=(p.delay-closest)/Math.max(1,farthest-closest)*.43;
-    morph={from:form,to:1-form,at:f.clock};
+    morph={from:form,to:1-form,at:f.clock,span:morphSeconds};
     celebration=-Infinity;
   }
   function advance(f) {
-    if (!morph || f.clock-morph.at<morphSeconds) return;
+    if (!morph || f.clock-morph.at<morph.span) return;
     form=morph.to; morph=null;
     if (form) celebration=f.clock;
     if (queued) { const next=queued; queued=null; startMorph(f,next); }
@@ -417,6 +417,22 @@ function createScene(accent, count, treeAccent = accent) {
       form=1-target; morph=null; queued=null; celebration=-Infinity;
     } else if (morph) queued=queued?null:point;
     else startMorph(f,point);
+  }
+  function openLetter(f, point) {
+    queued=null;
+    advance(f);
+    if (f.quiet) { form=1; morph=null; return; }
+    if (!morph && !form) startMorph(f,point);
+    if (!morph) return;
+    let progress=clamp((f.clock-morph.at)/morph.span,0,1);
+    if (morph.to===0) {
+      // 反向途中开信，从每颗粒子眼下的位置转向树形。
+      progress=1-progress;
+      for (const p of dust) p.delay=.43-p.delay;
+      form=0; morph.from=0; morph.to=1;
+    }
+    morph.span=.92;
+    morph.at=f.clock-progress*morph.span;
   }
   function entrance(f) {
     const power=1-smooth(.30,.70,f.shot);
@@ -471,7 +487,7 @@ function createScene(accent, count, treeAccent = accent) {
     const c = f.ctx, q = {};
     if (f.shot===1 && settledAt===null) settledAt=f.clock;
     advance(f);
-    const progress=morph ? clamp((f.clock-morph.at)/morphSeconds,0,1) : 1;
+    const progress=morph ? clamp((f.clock-morph.at)/morph.span,0,1) : 1;
     const tree=morph ? mix(morph.from,morph.to,smooth(0,1,progress)) : form;
     const heart=(1-smooth(.04,.66,tree))*smooth(.43,.89,f.shot);
     const basis=heartBasis(f), hcos=Math.cos(basis), hsin=Math.sin(basis);
@@ -628,6 +644,7 @@ function createScene(accent, count, treeAccent = accent) {
   }
   return {
     seed, paint: materials[0].body, draw, backdrop, reset, still, tap, entrance, action:"轻点切换爱心与圣诞树",
+    letter:{kind:"rose", name:"玫瑰花苞", tile:petalTiles[0], onOpen:openLetter},
     camera:{zoom:1.10,focus:.49,pan:-.36,lift:.02,pitch:-.22,direction:-1},
     cues:[{at:1.25,x:.47,y:.53},{at:6.90,x:.56,y:.60}],
     sparkColor:gold,speed:.115,initialAngle:0,drift:4,snowCount:59,

@@ -10,7 +10,8 @@
     const SETTINGS = {
       __COLORS__
       particleCount: __COUNT__,        // 树身粒子数，范围 400 到 4800
-      greeting: __GREETING__ // 祝福语，留空即可隐藏
+      greeting: __GREETING__, // 树下祝福语，留空即可隐藏
+      letter: __LETTER_TEXT__ // 信件正文，在两个反引号之间填写，回车和空行都会保留
     };
   </script>
   <style>
@@ -28,21 +29,62 @@
     }
     #surface.is-dragging { cursor: grabbing; }
     #surface:focus-visible { outline: 2px solid var(--ink, ivory); outline-offset: -6px; }
+    #greeting, #letter-reader {
+      color: var(--ink, ivory); font-family: "Baskervville", "Iowan Old Style", "Palatino Linotype",
+        "Songti SC", "Noto Serif CJK SC", SimSun, Georgia, serif;
+    }
     #greeting {
       position: absolute; left: 50%; top: 85%; margin: 0; width: max-content; max-width: 88%;
       transform: translate(-50%, -50%); pointer-events: none; text-align: center;
-      color: var(--ink, ivory); font-family: "Baskervville", "Iowan Old Style", "Palatino Linotype",
-        "Songti SC", "Noto Serif CJK SC", SimSun, Georgia, serif;
       font-size: clamp(1.125rem, 2.8vmin, 1.75rem); font-weight: 400; line-height: 1.5;
       letter-spacing: .13em; overflow-wrap: anywhere; text-wrap: balance;
       text-shadow: 0 0 18px var(--haze, transparent);
     }
+    #letter-charm, #letter-skip {
+      position: absolute; border: 0; padding: 0; background: transparent; cursor: pointer;
+    }
+    #letter-charm { width: 80px; height: 80px; transform: translate(-50%, -50%); border-radius: 50%; }
+    #letter-charm:focus-visible, #letter-skip:focus-visible, #letter-close:focus-visible {
+      outline: 2px solid var(--ink, ivory); outline-offset: 2px;
+    }
+    #letter-reader { position: absolute; inset: 0 0 0 52%; --letter-pad: max(6vw, env(safe-area-inset-right)); }
+    #letter-page {
+      position: absolute; top: 47%; transform: translateY(-50%); width: min(calc(100% - var(--letter-pad)), 32rem);
+      max-height: calc(84% - 44px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+      scrollbar-color: var(--haze) transparent;
+    }
+    #letter-copy {
+      margin: 0; min-height: 1.75em; font-size: clamp(1.125rem, .9rem + .65vw, 1.5rem);
+      line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; text-align: start;
+    }
+    #letter-copy.ends-with-break::after { content: "\200b"; }
+    #letter-close {
+      display: block; margin: 8px 0 0 auto; min-height: 44px; padding: 4px 8px;
+      border: 0; border-radius: 4px; background: transparent; color: var(--ink);
+      font-size: .875rem; letter-spacing: .12em; cursor: pointer;
+    }
+    #letter-close:hover, #letter-close:focus-visible { text-shadow: 0 0 8px var(--ink); }
+    #letter-close:focus-visible { outline-offset: -3px; }
+    #letter-close:active { transform: scale(.96); }
+    #letter-skip { inset: 0; width: 100%; height: 100%; }
+    #letter-skip:focus-visible { outline-offset: -4px; }
+    #letter-close, #letter-envelope { visibility: hidden; }
+    [data-letter="reading"] #letter-close, [data-letter="envelope"] #letter-envelope { visibility: visible; }
+    @media (orientation: portrait) {
+      #letter-reader { left: 38%; --letter-pad: max(18px, env(safe-area-inset-right)); }
+      #letter-copy { font-size: 1.0625rem; }
+    }
     .tools {
       position: absolute; top: max(12px, env(safe-area-inset-top));
       right: max(12px, env(safe-area-inset-right)); display: flex; gap: 4px;
-      opacity: 0; pointer-events: none; transition: opacity 300ms cubic-bezier(.22,1,.36,1);
+      pointer-events: none;
     }
-    main.awake .tools, .tools:has(button:focus-visible) { opacity: 1; pointer-events: auto; }
+    .transport {
+      display: flex; gap: 4px; opacity: 0; pointer-events: none;
+      transition: opacity 300ms cubic-bezier(.22,1,.36,1);
+    }
+    main.awake .transport, .tools:has(button:focus-visible) .transport { opacity: 1; pointer-events: auto; }
+    #letter-envelope { pointer-events: auto; }
     .tools button {
       display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid transparent;
       border-radius: 50%; background: transparent; color: var(--ink, ivory); cursor: pointer;
@@ -63,7 +105,7 @@
     .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
       clip-path: inset(50%); white-space: nowrap; border: 0; }
     noscript { position: absolute; inset: 45% 5% auto; text-align: center; color: white; }
-    @media (prefers-reduced-motion: reduce) { .tools { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .transport { transition: none; } }
   </style>
 </head>
 <body>
@@ -72,9 +114,20 @@
     <canvas id="art" aria-hidden="true"></canvas>
     <button type="button" id="surface" aria-label="与粒子互动"></button>
     <p id="greeting"></p>
+    <button type="button" id="letter-charm" aria-label="打开信件" aria-controls="letter-reader" hidden></button>
+    <section id="letter-reader" aria-label="信件正文" hidden>
+      <div id="letter-page">
+        <p id="letter-copy"></p>
+        <button type="button" id="letter-close">收起</button>
+      </div>
+      <button type="button" id="letter-skip" aria-label="加速显示正文" hidden></button>
+    </section>
     <div class="tools" role="group" aria-label="播放控制">
-      <button type="button" id="replay" aria-label="重播完整演示" title="重播完整演示"><span class="replay-icon" aria-hidden="true"></span></button>
-      <button type="button" id="pause" aria-label="暂停动画" title="暂停动画"><span class="pause-icon" aria-hidden="true"></span></button>
+      <button type="button" id="letter-envelope" aria-label="重新打开信件" aria-controls="letter-reader"></button>
+      <div class="transport">
+        <button type="button" id="replay" aria-label="重播完整演示" title="重播完整演示"><span class="replay-icon" aria-hidden="true"></span></button>
+        <button type="button" id="pause" aria-label="暂停动画" title="暂停动画"><span class="pause-icon" aria-hidden="true"></span></button>
+      </div>
     </div>
     <noscript>请用启用了 JavaScript 的浏览器打开这棵树。</noscript>
   </main>
@@ -83,6 +136,8 @@
 __DRAWING__
 __EFFECTS__
 __SCENE__
+__LETTER_ART__
+__LETTER__
 __PLAYER__
   </script>
 </body>

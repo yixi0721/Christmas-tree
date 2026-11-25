@@ -32,6 +32,7 @@ function startPlayer() {
   let shot = paused ? 1 : 0, clock = 0, settle = null, pending = [];
   let demo = null, feedback = [], userTurn = 0, velocity = 0, drag = null;
   let picture, frameId = 0, previous = null, hideTimer = 0, skipPointerClick = false;
+  const letter = makeLetter(stage, scene, accent, SETTINGS.letter, lowMotion, openLetter, requestFrame);
   surface.setAttribute("aria-label",scene.action+"，左右拖动或按方向键旋转");
   scene.reset();
   caption.textContent = String(SETTINGS.greeting ?? "");
@@ -51,16 +52,25 @@ function startPlayer() {
     const r = Math.min(w * .371, h * .384);
     Object.assign(f, { w, height, h, r, dpr, cx: w / 2, base: height * .49 + h * .48,
       unit: clamp(h / 455, .67, 1.63) });
-    f.rest = {cx:f.cx,base:f.base,h,r,unit:f.unit};
+    f.home = {cx:f.cx,base:f.base,h,r,unit:f.unit};
+    f.rest = {...f.home};
     art.width = Math.round(w * dpr); art.height = Math.round(height * dpr);
     ctx.setTransform(art.width / w, 0, 0, art.height / height, 0, 0);
     caption.style.top = Math.min(height - 26, f.base + r * .405 + Math.max(13, height * .022)) + "px";
     picture = paintSky(f, scene);
+    letter.resize(f.home, w, height);
     setCamera();
     requestFrame();
   }
   function setCamera() {
-    const rest=f.rest, lens=scene.camera;
+    const {rest,home}=f, lens=scene.camera;
+    const view=letter.view(), portrait=f.height>=f.w;
+    const readingScale=portrait ? Math.min(1,f.w*.148/home.r) : Math.min(.92,f.w*.184/home.r);
+    const scale=mix(1,readingScale,view);
+    rest.cx=mix(home.cx,f.w*(portrait ? .18 : .275),view);
+    const readingBase=portrait ? f.height*.705 : f.height*.50+home.h*readingScale*.49;
+    rest.base=mix(home.base,readingBase,view);
+    rest.h=home.h*scale; rest.r=home.r*scale; rest.unit=home.unit*scale;
     const travel=1-smooth(.045,1,shot);
     const pullback=lens.pullbackEnd ? 1-smooth(.02,lens.pullbackEnd,shot) : travel;
     const zoom=1+lens.zoom*pullback;
@@ -73,6 +83,13 @@ function startPlayer() {
     f.r=rest.r*zoom; f.h=rest.h*zoom; f.unit=rest.unit*(1+.29*(zoom-1));
     f.parallax=.28*travel; f.pitch=lens.pitch*travel;
     if (shot===1 && scene.reframe) scene.reframe(f);
+  }
+  function openLetter(origin) {
+    demo=null; pending=[]; velocity=0;
+    if (shot<1) settle={from:shot,age:0,span:Math.min(.5,(1-shot)*openingSeconds)};
+    setCamera();
+    if (scene.letter.onOpen) scene.letter.onOpen({...f,quiet:lowMotion.matches},
+      {x:origin.x/f.w,y:origin.y/f.height});
   }
   function feedbackAt(point) {
     feedback=feedback.slice(-4);
@@ -101,10 +118,11 @@ function startPlayer() {
         if (shot===1) settle=null;
       } else shot=Math.min(1,shot+dt/openingSeconds);
     }
-    if (!drag && Math.abs(velocity) > .012) {
+    if (!paused && !drag && Math.abs(velocity) > .012) {
       userTurn += velocity * dt;
       velocity *= Math.exp(-dt * 4.7);
     } else if (!drag) velocity = 0;
+    letter.advance(paused ? 0 : dt);
     setCamera();
     if (shot===1 && pending.length) {
       for (const point of pending) scene.tap(f,point);
@@ -122,7 +140,10 @@ function startPlayer() {
     for (const hit of feedback) {
       if (!lowMotion.matches) drawTouchSparks(f,touchSparks,clock-hit.at,hit.point);
     }
-    caption.style.opacity=String(clamp(greetingOpacity*smooth(.67,.99,shot),0,1));
+    letter.draw(f);
+    const captionAlpha=f.height>=f.w ? 1-letter.view() : 1;
+    caption.style.opacity=String(clamp(greetingOpacity*smooth(.67,.99,shot)*captionAlpha,0,1));
+    caption.style.translate=(f.rest.cx-f.home.cx)+"px "+(f.rest.base-f.home.base+(f.rest.r-f.home.r)*.405)+"px";
     if (!paused || velocity !== 0) requestFrame();
     else previous = null;
   }
@@ -137,6 +158,8 @@ function startPlayer() {
     hideTimer = setTimeout(() => stage.classList.remove("awake"), 1850);
   }
   function interact(x=.5,y=(f.rest.base-f.rest.h*.50)/f.height) {
+    // 读信期间玫瑰款保持树形，收起后再轻点即可切回爱心。
+    if (letter.active && scene.letter.kind==="rose") return;
     const point={x:clamp(x,0,1),y:clamp(y,0,1)};
     demo=null; feedbackAt(point);
     if (shot<1 && !paused) {
@@ -152,19 +175,20 @@ function startPlayer() {
   }
   pauseButton.addEventListener("click", () => {
     paused = !paused; previous = null;
+    if (paused) velocity=0;
     updatePauseButton(); showControls(); requestFrame();
   });
   document.getElementById("replay").addEventListener("click", () => {
     shot=lowMotion.matches?1:0; clock=0; userTurn=0; velocity=0;
     pending=[]; feedback=[]; settle=null; demo={time:0,index:0};
     for (const p of snow) p.frozen=null;
-    scene.reset();
+    scene.reset(); letter.reset();
     paused = false; previous = null;
     updatePauseButton(); showControls(); requestFrame();
   });
   surface.addEventListener("pointerdown", e => {
     if (e.button !== 0 || !e.isPrimary || drag) return;
-    const area = controls.getBoundingClientRect();
+    const area = controls.querySelector(".transport").getBoundingClientRect();
     const revealOnly = !stage.classList.contains("awake") && e.clientX >= area.left && e.clientX <= area.right &&
       e.clientY >= area.top && e.clientY <= area.bottom;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, lastX: e.clientX, lastAt: e.timeStamp,

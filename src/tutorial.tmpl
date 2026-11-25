@@ -70,12 +70,13 @@
     <li>回到文件夹，右键同一份副本，选「打开方式 → 记事本」。按 <kbd>Ctrl</kbd> + <kbd>F</kbd> 搜索 <strong>个性设置</strong>。</li>
   </ol>
 
-  <h2>改颜色、粒子数和祝福语</h2>
-  <p>打开《冰晶回旋》的副本，把文件开头的设置改成下面这样。保留英文双引号和逗号，数字直接写。</p>
+  <h2>改颜色、粒子数、祝福语和信件正文</h2>
+  <p>打开《冰晶回旋》的副本，把文件开头的设置改成下面这样。颜色和树下祝福用英文双引号，信件正文放在反引号之间，粒子数直接写数字。</p>
   <pre><code>const SETTINGS = {
   color: "#75E6CB",
   particleCount: 2200,
-  greeting: "小满，圣诞快乐"
+  greeting: "小满，圣诞快乐",
+  letter: ``
 };</code></pre>
   <dl>
     <dt><code>color</code> 控制主光颜色</dt>
@@ -86,6 +87,8 @@
     <dd>可以写 400 到 4800 的整数。《冰晶回旋》默认是 3750。试试 1200，再试 3750，比较光带之间透出的夜空和周围的雪晶数量。手机录屏掉帧时，可以先调到 1600。</dd>
     <dt><code>greeting</code> 是树下的文字</dt>
     <dd>双引号里可以写名字、一句话或 emoji。想录纯画面就写 <code>greeting: ""</code>。</dd>
+    <dt><code>letter</code> 是信件正文</dt>
+    <dd>在两个反引号之间输入正文，直接按回车换行，空行也会保留。保存刷新后，点花苞、冰晶或提灯开信，点右侧加速。读完点「收起」，下次点右上角的信封就能重读。</dd>
   </dl>
   <p>按 <kbd>Ctrl</kbd> + <kbd>S</kbd> 保存，切回打开副本的浏览器，按 <kbd>Ctrl</kbd> + <kbd>R</kbd>。等树顶亮起来，看一眼灯带颜色和树下的名字。把改好的 HTML 文件单独发给朋友就能分享这款作品。</p>
 
@@ -108,7 +111,7 @@
     <li><time datetime="PT0S">0–4 秒</time><span><b>先放指尖结霜的特写，再切回冰面升起的蓝光。</b>“点哪儿，雪花就开在哪儿。给朋友做一棵这样的树，只改三行。”</span></li>
     <li><time datetime="PT4S">4–10 秒</time><span><b>录桌面，复制文件，右键用记事本打开。</b>“先给自己留一份副本，搜索‘个性设置’，就在文件开头。”</span></li>
     <li><time datetime="PT10S">10–18 秒</time><span><b>把色值改成薄荷青，保存刷新，给一秒前后对比。</b>“第一行是灯光颜色。我换成薄荷青，同一条光带就变了。”</span></li>
-    <li><time datetime="PT18S">18–26 秒</time><span><b>粒子数改成 2200，祝福语加上名字。</b>“第二行决定星尘有多密。最后一行写给谁，就把谁的名字放进来。”</span></li>
+    <li><time datetime="PT18S">18–26 秒</time><span><b>粒子数改成 2200，祝福语加上名字。</b>“第二行决定星尘有多密。祝福语写给谁，就把谁的名字放进来。”</span></li>
     <li><time datetime="PT26S">26–38 秒</time><span><b>刷新，等树顶亮起，拖半圈，点树旁的留白。</b>“保存，刷新，树下就有了小满的名字。拖一下换个角度，再点这里，看雪停住，又往天上飞。”</span></li>
   </ol>
 
@@ -124,7 +127,7 @@
   <details>
     <summary>同时维护三款源码</summary>
     <p>单独改一份礼物，直接改它的 HTML。维护整套样本时，在 <code>src/build.mjs</code> 修改三款默认设置。爱心、螺旋和松枝分别在 <code>src/rose.js</code>、<code>src/ice.js</code>、<code>src/fir.js</code>。共用绘制在 <code>src/drawing.js</code>，彗尾、飘落物和触摸星屑在 <code>src/effects.js</code>，播放与交互在 <code>src/player.js</code>。</p>
-    <p>教程文字在 <code>src/tutorial.tmpl</code>，配图是根目录的 <code>三款预览.webp</code>。在项目目录运行 <code>node src/build.mjs</code>，会重新生成三个原名 HTML 和这份教程。自己的礼物请用单独的文件名保存。</p>
+    <p>信件流程和正文排版在 <code>src/letter.js</code>，主题物件、旋风和信封的绘制在 <code>src/letter-art.js</code>。教程文字在 <code>src/tutorial.tmpl</code>，配图是根目录的 <code>三款预览.webp</code>。在项目目录运行 <code>node src/build.mjs</code>，会重新生成三个原名 HTML 和这份教程。自己的礼物请用单独的文件名保存。</p>
   </details>
   <p class="sources">爱心聚树和冰蓝螺旋的画面参考来自 <a href="https://www.douyin.com/video/7711047031062578091">John 的作品</a> 和 <a href="https://www.douyin.com/video/7709802322972862841">纯情大水牛的作品</a>。</p>
 </main>
