@@ -12,6 +12,14 @@
 
 ![玫瑰星愿、冰晶回旋和平安夜灯火的实际画面](./三款预览.webp)
 
+## 开信与收起
+
+《玫瑰星愿》的花瓣、《冰晶回旋》的晶片和《平安夜灯火》的火星分别写出同一封示例信。收起时，文字散成粒子，在右上角聚成信封。三款 HTML 的信件正文默认留空。
+
+[<img src="./docs/previews/rose-letter.webp" alt="玫瑰星愿的花苞化作花瓣，逐字写信，再收成信封" width="280">](./docs/previews/rose-letter.webp)
+[<img src="./docs/previews/ice-letter.webp" alt="冰晶回旋的六瓣冰晶化作晶片，逐字写信，再收成信封" width="280">](./docs/previews/ice-letter.webp)
+[<img src="./docs/previews/fir-letter.webp" alt="平安夜灯火的小提灯散出金色火星，逐字写信，再收成信封" width="280">](./docs/previews/fir-letter.webp)
+
 ## 填写信件正文
 
 用记事本打开想送出的那一款 HTML，在文件开头的 `SETTINGS` 中找到下面这一行。把光标放在两个反引号之间，输入正文，直接按回车换行。空行也会保留。保存后刷新页面即可。这一项与树下的 `greeting` 分开填写。
